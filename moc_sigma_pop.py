@@ -5,6 +5,7 @@ import numpy as np                #numerics
 import gsw  	                  #ocean equation of state
 import os  	                  #operating system commands
 import time as timer
+import pop_tools
 #import cftime                     #netcdf time
 #import matplotlib                 #plotting, the entire module, needed for following line
 #matplotlib.use('Agg')             #backend necessary to save/plot from casper queue without crashing, optional for interactive session
@@ -147,13 +148,17 @@ z_top=z_w.values
 # first, convert model depth to pressure
 #    (gsw function require numpy arrays, not xarray, so use ".values") 
 #    (use [:,None,None] syntax to conform the z_t and tlat into 3D arrays)
-press = gsw.p_from_z(-z_t.values[:,None,None],tlat.values[None,:,:])
+#press = gsw.p_from_z(-z_t.values[:,None,None],tlat.values[None,:,:])
 # compute absolute salinity from practical salinity
-SA = gsw.SA_from_SP(salt,press[None,:,:,:],tlon.values[None,None,:,:],tlat.values[None,None,:,:])
+#SA = gsw.SA_from_SP(salt,press[None,:,:,:],tlon.values[None,None,:,:],tlat.values[None,None,:,:])
 # compute conservative temperature from potential temperature
-CT = gsw.CT_from_pt(SA,temp.values)
-# compute sigma2
-sigma2 = gsw.sigma2(SA,CT)
+#CT = gsw.CT_from_pt(SA,temp.values)
+#sigma2 = gsw.sigma2(SA,CT)
+
+# compute sigma2 using pop_tools:
+press=xr.DataArray(np.ones(np.shape(salt))*2000.,dims=salt.dims,coords=salt.coords)
+sigma2=pop_tools.eos(salt=salt,temp=temp,pressure=press)
+sigma2 = sigma2-1000.
 
 # convert to DataArray
 sigma2 = xr.DataArray(sigma2,name='Sigma2',dims=pd.dims,coords=pd.coords)
@@ -295,12 +300,12 @@ del tmp,tmpw,tmpall
 atlmask=xr.DataArray(np.where(rmask==6,1,0),dims=['nlat','nlon'])
 atlmask=atlmask.roll(nlat=-1,roll_coords=False)
 vflux_sig_xint=vflux_sig.where(atlmask==1).sum(dim='nlon')
-#amoc_s=-vflux_sig_xint[0,::-1,lat_aux_atl_start-1].cumsum(dim='sigma')
-amoc_s_new=-np.cumsum(vflux_sig_xint.values[0,::-1,lat_aux_atl_start-1],axis=0)
+amoc_s=-vflux_sig_xint[0,::-1,lat_aux_atl_start-1].cumsum(dim='sigma')
+#amoc_s_new=-np.cumsum(vflux_sig_xint.values[0,::-1,lat_aux_atl_start-1],axis=0)
 amoc_s = amoc_s[::-1]*1.e-6
 print("amoc_s=",amoc_s)
 #Something's wrong... need to debug southern boundary addition:
-MOCnew[:,1,:,:] = MOCnew[:,1,:,:] + amoc_s
+#MOCnew[:,1,:,:] = MOCnew[:,1,:,:] + amoc_s
 
 
 #8.    Write output to netcdf
