@@ -51,7 +51,9 @@ import moc_offline_1deg
 
 #1. Define input/output streams
 in_dir='/glade/scratch/yeager/g.DPLE.GECOIAF.T62_g16.009.chey/'
-out_dir=in_dir
+# out_dir=in_dir
+out_dir='/glade/scratch/emaroon/moctest/'
+
 in_file = in_dir+'g.DPLE.GECOIAF.T62_g16.009.chey.pop.h.0301-01.nc'
 out_file = out_dir+'g.DPLE.GECOIAF.T62_g16.009.chey.pop.h.0301-01.MOCsig2.python.nc'
 
@@ -156,9 +158,16 @@ z_top=z_w.values
 #sigma2 = gsw.sigma2(SA,CT)
 
 # compute sigma2 using pop_tools:
-press=xr.DataArray(np.ones(np.shape(salt))*2000.,dims=salt.dims,coords=salt.coords)
-sigma2=pop_tools.eos(salt=salt,temp=temp,pressure=press)
+depth=xr.DataArray(np.ones(np.shape(salt))*2000.,dims=salt.dims,coords=salt.coords)
+#press=0.059808*(np.exp(-0.025*depth) - 1.0)  + 0.100766*depth + 2.28405e-7*(depth**2) 
+#press=press*10.
+#sigma2=pop_tools.eos(salt=salt,temp=temp,pressure=press)
+sigma2=pop_tools.eos(salt=salt,temp=temp,depth=depth)
 sigma2 = sigma2-1000.
+
+if debug:
+   pdt=sigma2.copy()
+   pdt.z_t.values=pdt.z_t.values/100
 
 # convert to DataArray
 sigma2 = xr.DataArray(sigma2,name='Sigma2',dims=pd.dims,coords=pd.coords)
@@ -215,6 +224,9 @@ if debug:
    tmparr5=tmparr2.where(tmparr2<1.e30).max(dim='sigma',skipna=True)
    tmparr6=tmparr5-hu
    debug_ds=tmparr3.to_dataset(name='SIG_zdiff')
+
+   debug_ds['pdt']=pdt
+
    debug_ds['SIG_top']=tmparr1
    debug_ds['SIG_bot']=tmparr2
    debug_ds['SIG_top_min']=tmparr4
@@ -229,56 +241,81 @@ uedydz = u_e*dyu*dz	# m^3/s
 vedxdz = v_e*dxu*dz	# m^3/s
 wedxdy = w_e*tarea	# m^3/s
 tmpkmt=np.transpose(kmt.values,axes=[1,0])
-tmpu=np.transpose(uedydz.values,axes=[3,2,1,0])
-tmpv=np.transpose(vedxdz.values,axes=[3,2,1,0])
+tmpu=np.transpose(uedydz.values.copy(),axes=[3,2,1,0])
+tmpv=np.transpose(vedxdz.values.copy(),axes=[3,2,1,0])
 uflux,vflux,dwflux = moc_offline_1deg.sig2fluxconv(tmpkmt,z_top,z_bot,dz.values,zsigu_top,zsigu_bot,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
 time2=timer.time()
 print('sig2fluxconv:  ',time2-time1,'s')
-del tmpkmt,tmpu,tmpv
+#del tmpkmt#,tmpu,tmpv
 
 # DEBUG: write vertically-integrated volume fluxes, from both z-coord & sigma-coord, to netcdf
 if debug:
+   uflux_z=xr.DataArray(uedydz.values,dims=['time','z_t','nlat','nlon'], \
+      coords={'time':time,'z_t':z_t.values,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+      name='uedydz_z')
+   vflux_z=xr.DataArray(vedxdz.values,dims=['time','z_t','nlat','nlon'], \
+      coords={'time':time,'z_t':z_t.values,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+      name='vedxdz_z')
    uflux_sig=xr.DataArray(np.transpose(uflux,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
       coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
       name='uedydz_sig')
    vflux_sig=xr.DataArray(np.transpose(vflux,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
       coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
       name='vedxdz_sig')
-   dwflux_sig=xr.DataArray(np.transpose(dwflux,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
+   dwflux_sig=xr.DataArray(np.transpose(dwflux.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
       coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
       name='dwedxdy_sig')
-   dwflux_sig_zint=dwflux_sig.where(dwflux_sig<1.e30).sum(dim='sigma')
+   dwflux_sig_zint=dwflux_sig.where(dwflux_sig<1.e30).sum(dim='sigma').copy()
    uflux_sig_zint=uflux_sig.where(uflux_sig<1.e30).sum(dim='sigma')
    vflux_sig_zint=vflux_sig.where(vflux_sig<1.e30).sum(dim='sigma')
    uflux_zint=uedydz.where(uedydz<1.e30).sum(dim='z_t')
    vflux_zint=vedxdz.where(vedxdz<1.e30).sum(dim='z_t')
-   debug_ds['dwflux_sig']=dwflux_sig
+   debug_ds['dwflux_sig']=dwflux_sig.copy()
    debug_ds['uflux_zint_fromsigma']=uflux_sig_zint
    debug_ds['uflux_zint_fromz']=uflux_zint
    debug_ds['vflux_zint_fromsigma']=vflux_sig_zint
    debug_ds['vflux_zint_fromz']=vflux_zint
    debug_ds['wflux_srf_fromsigma']=dwflux_sig_zint
    debug_ds['wflux_srf_fromz']=wedxdy[:,0,:,:]
-   debug_ds.to_netcdf('/glade/scratch/yeager/python_debug.nc')
+   debug_ds['uedydz_z']=uflux_z
+   debug_ds['vedxdz_z']=vflux_z
 
 #6 b. Compute WDXDY (m^3/s) as partial integral of dWDXDY from ocean bottom
-tmpdwflux = dwflux_sig[:,::-1,:,:]
-wflux_sig=tmpdwflux.where(tmpdwflux<1.e30).cumsum(dim='sigma',skipna=True)
+dwflux_sig=xr.DataArray(np.transpose(dwflux.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
+      coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+      name='dwedxdy_sig')
+tmpdwflux = dwflux_sig[:,::-1,:,:].copy()
+tmpdwflux.values[tmpdwflux.values>1e30]=np.nan
+#wflux_sig=tmpdwflux.where(tmpdwflux<1.e30).cumsum(dim='sigma',skipna=True).copy()
+wflux_sig=tmpdwflux.cumsum(dim='sigma',skipna=True).copy()
+wflux_sig.values[np.isnan(tmpdwflux.values)]=np.nan
+wflux_sig=wflux_sig[:,::-1,:,:]
+
+#plt.pcolormesh(wflux_sig.isel(time=0,sigma=4))
+#plt.colorbar()
+#plt.show()
+
+if debug:
+   debug_ds['wflux_sig']=wflux_sig.copy()
+   debug_ds.to_netcdf(out_dir+'python_debug.nc')
+
 
 #7. Compute MOC in sigma-space
 #7a.    integrate w_sigma in zonal direction
 rmlak = np.zeros((nx,ny,2),dtype=np.int)
 tmprmask = np.transpose(rmask.values,axes=[1,0])
 tmptlat = np.transpose(tlat.values,axes=[1,0])
-tmpw = np.transpose(wflux_sig.values,axes=[3,2,1,0])
+tmpw = np.transpose(np.where(~np.isnan(wflux_sig.values.copy()),wflux_sig.values.copy(),mval),axes=[3,2,1,0])
 rmlak[:,:,0] = np.where(tmprmask>0,1,0)
 rmlak[:,:,1] = np.where((tmprmask>=6) & (tmprmask<=11),1,0)
 tmpmoc = moc_offline_1deg.moczonalint(tmptlat,lat_aux_grid,rmlak,tmpw,mval,[nyaux,nx,ny,nz,nt,ntr])
+print('tmpmoc shape',np.shape(tmpmoc))
 
 #7b.    do meridional integration
 MOCnew = xr.DataArray(np.transpose(tmpmoc,axes=[3,2,1,0]),dims=['time','transport_reg','sigma','lat_aux_grid'], \
         coords={'time':time,'transport_reg':transport_regions,'sigma':sig2,'lat_aux_grid':lat_aux_grid}, \
         name='MOC',attrs={'units':'Sv','long_name':'Meridional Overturning Circulation'})
+print('mocnewshape',np.shape(MOCnew))
 MOCnew = MOCnew.where(MOCnew<mval).cumsum(dim='lat_aux_grid')
 MOCnew = MOCnew*1.0e-6
 
@@ -289,6 +326,8 @@ for n in range(1,nyaux):
     section = (tlat.values >= lat_aux_grid.values[n-1]) & (tlat.values < lat_aux_grid.values[n]) & (np.transpose(rmlak[:,:,1],axes=[1,0]) == 1)
     if (section.any() and (n < lat_aux_atl_start)): 
        lat_aux_atl_start = n-1
+# print("lat_aux_atl_start= ",lat_aux_atl_start)
+
 
 # Regrid VDXDZ in sigma-coord from ULONG,ULAT to TLONG,ULAT grid
 tmp=vflux_sig
