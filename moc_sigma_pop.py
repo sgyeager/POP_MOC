@@ -9,7 +9,7 @@ import pop_tools
 # Set Options
 time1=timer.time()
 debug=True
-zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
+zcoord=False		# True-->compute MOC(z), False-->compute MOC(sigma2)
 
 # Define input/output streams
 in_dir='/glade/scratch/yeager/g.DPLE.GECOIAF.T62_g16.009.chey/'
@@ -18,7 +18,7 @@ in_file = in_dir+'g.DPLE.GECOIAF.T62_g16.009.chey.pop.h.0301-01.nc'
 out_file = out_dir+'g.DPLE.GECOIAF.T62_g16.009.chey.pop.h.0301-01.MOCsig2.python.nc'
 
 # Import offline MOC routines written in fortran (compile with f2py if necessary)
-f90mocroutines='/glade/u/home/yeager/POP_tools/computeMOCoffline/lib/MOCoffline.POP_1deg.f90'
+f90mocroutines='./MOCoffline.POP_1deg.f90'
 if not os.path.isfile('moc_offline_1deg.cpython-37m-x86_64-linux-gnu.so'):  
    print('MOCoffline compiling')
    os.system('f2py -c '+f90mocroutines+' -m moc_offline_1deg')
@@ -303,8 +303,8 @@ print('tmpmoc shape',np.shape(tmpmoc))
 
 #   b. integrate in meridional direction
 MOCnew = xr.DataArray(np.transpose(tmpmoc,axes=[3,2,1,0]),dims=['time','transport_reg','sigma','lat_aux_grid'], \
-        coords={'time':time,'transport_reg':transport_regions,'sigma':sig2,'lat_aux_grid':lat_aux_grid}, \
-        name='MOC',attrs={'units':'Sv','long_name':'Meridional Overturning Circulation'})
+        coords={'time':time,'transport_regions':transport_regions,'sigma':sig2_top,'lat_aux_grid':lat_aux_grid}, \
+        name='MOC')
 print('mocnewshape',np.shape(MOCnew))
 MOCnew = MOCnew.where(MOCnew<mval).cumsum(dim='lat_aux_grid')
 MOCnew = MOCnew*1.0e-6
@@ -333,10 +333,14 @@ amoc_s=-vflux_sig_xint[0,::-1,lat_aux_atl_start-1].cumsum(dim='sigma')
 amoc_s = amoc_s[::-1]*1.e-6
 print("amoc_s=",amoc_s)
 #Something's wrong... need to debug southern boundary addition:
-#MOCnew[:,1,:,:] = MOCnew[:,1,:,:] + amoc_s
+MOCnew.values[:,1,:,:] = MOCnew.values[:,1,:,:] + amoc_s.values[None,:,None]
 
 
 #8.    Write output to netcdf
+if zcoord:
+   MOCnew=MOCnew.rename({'sigma':'moc_z'})
+#MOCnew.encoding=moc.encoding
+MOCnew.attrs={'units':'Sv','long_name':'Meridional Overturning Circulation'}
 out_ds=MOCnew.to_dataset(name='MOC')
 out_ds.to_netcdf(out_file)
 
