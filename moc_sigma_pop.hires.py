@@ -9,13 +9,16 @@ import pop_tools
 # Set Options
 time1=timer.time()
 debug=True
-zcoord=False		# True-->compute MOC(z), False-->compute MOC(sigma2)
+zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
 
 # Define input/output streams
 in_dir='/glade/p/cgd/oce/projects/JRA55/IAF/g.e20.G.TL319_t13.control.001/ocn/tavg/'
 out_dir='/glade/scratch/yeager/g.e20.G.TL319_t13.control.001/'
 in_file = in_dir+'g.e20.G.TL319_t13.control.001.pop.tavg.0042-0061.nc'
-out_file = out_dir+'MOCsig2.myloops.0042-0061.python.nc'
+#out_file = out_dir+'MOCsig2.myloops.0042-0061.python.nc'
+#out_file_db = out_dir+'MOCsig2.myloops.0042-0061.python.debug.nc'
+out_file = out_dir+'MOCz.0042-0061.python.nc'
+out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
 
 # Define needed data files
 POP1deg_gridfile='/glade/p/cgd/oce/people/yeager/POP_grids/gx1v6_ocn.nc'
@@ -236,6 +239,7 @@ if debug:
 uedydz = u_e*dyu*dzu	# m^3/s
 vedxdz = v_e*dxu*dzu	# m^3/s
 wedxdy = w_e*tarea	# m^3/s
+tmpdzu=np.transpose(dzu.values,axes=[2,1,0])
 tmpkmt=np.transpose(kmt.values,axes=[1,0])
 tmpkmu=np.transpose(kmu.values,axes=[1,0])
 tmpu=np.transpose(uedydz.values.copy(),axes=[3,2,1,0])
@@ -290,7 +294,7 @@ wflux_sig=wflux_sig[:,::-1,:,:]
 
 if debug:
 #   debug_ds['wflux_sig']=wflux_sig.copy()
-   debug_ds.to_netcdf(out_dir+'python_debug.nc')
+   debug_ds.to_netcdf(out_file_db)
 
 
 # Compute MOC in sigma-space
@@ -316,9 +320,10 @@ MOCnew = MOCnew*1.0e-6
 #    a. find starting j-index for Atlantic region
 lat_aux_atl_start = ny
 for n in range(1,ny):
-    section = (tlat.values >= lat_aux_grid.values[n-1]) & (tlat.values < lat_aux_grid.values[n]) & (np.transpose(rmlak[:,:,1],axes=[1,0]) == 1)
-    if (section.any() and (n < lat_aux_atl_start)): 
+    section = (rmlak[:,n,1] == 1)
+    if (section.any()):
        lat_aux_atl_start = n-1
+       break
 # print("lat_aux_atl_start= ",lat_aux_atl_start)
 
 #    b. regrid VDXDZ in sigma-coord from ULONG,ULAT to TLONG,ULAT grid
@@ -331,7 +336,7 @@ del tmp,tmpw,tmpall
 atlmask=xr.DataArray(np.where(rmask==6,1,0),dims=['nlat','nlon'])
 atlmask=atlmask.roll(nlat=-1,roll_coords=False)
 vflux_sig_xint=vflux_sig.where(atlmask==1).sum(dim='nlon')
-amoc_s=-vflux_sig_xint[0,::-1,lat_aux_atl_start-1].cumsum(dim='sigma')
+amoc_s=-vflux_sig_xint[0,::-1,lat_aux_atl_start].cumsum(dim='sigma')
 #amoc_s_new=-np.cumsum(vflux_sig_xint.values[0,::-1,lat_aux_atl_start-1],axis=0)
 amoc_s = amoc_s[::-1]*1.e-6
 print("amoc_s=",amoc_s)
