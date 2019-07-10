@@ -8,17 +8,17 @@ import pop_tools
 
 # Set Options
 time1=timer.time()
-debug=True
-zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
+zcoord=False		# True-->compute MOC(z), False-->compute MOC(sigma2)
+debug=True		# Only applies for zcoord=False
 
 # Define input/output streams
 in_dir='/glade/p/cgd/oce/projects/JRA55/IAF/g.e20.G.TL319_t13.control.001/ocn/tavg/'
 out_dir='/glade/scratch/yeager/g.e20.G.TL319_t13.control.001/'
 in_file = in_dir+'g.e20.G.TL319_t13.control.001.pop.tavg.0042-0061.nc'
-#out_file = out_dir+'MOCsig2.myloops.0042-0061.python.nc'
-#out_file_db = out_dir+'MOCsig2.myloops.0042-0061.python.debug.nc'
-out_file = out_dir+'MOCz.0042-0061.python.nc'
-out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
+out_file = out_dir+'MOCsig2.0042-0061.python.nc'
+out_file_db = out_dir+'MOCsig2.0042-0061.python.debug.nc'
+#out_file = out_dir+'MOCz.0042-0061.python.nc'
+#out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
 
 # Define needed data files
 POP1deg_gridfile='/glade/p/cgd/oce/people/yeager/POP_grids/gx1v6_ocn.nc'
@@ -55,9 +55,6 @@ tmpall=xr.concat([tmp,tmpe,tmpn,tmpne],dim='dummy')
 dzu=tmpall.min('dummy')
 dzu.attrs['units'] = 'm'
 del tmp,tmpe,tmpn,tmpne,tmpall
-# DEBUG:
-# out_ds=dzu.to_dataset(name='DZU')
-# out_ds.to_netcdf('/glade/scratch/yeager/g.e20.G.TL319_t13.control.001/DZU.python.nc')
 
 # Open a 0.1-deg POP history file to get needed fields
 ds = xr.open_dataset(in_file)
@@ -112,6 +109,14 @@ nx = dims[3]
 km = int(np.max(kmt).values)
 mval=pd.encoding['_FillValue']
 
+# grid-oriented volume fluxes 
+uflux_z = u_e*dyu*dzu    # m^3/s
+uflux_z = uflux_z.drop(['TLAT','TLONG'])
+vflux_z = v_e*dxu*dzu    # m^3/s
+vflux_z = vflux_z.drop(['TLAT','TLONG'])
+wflux_z = w_e*tarea     # m^3/s
+wflux_z = wflux_z.drop(['ULAT','ULONG'])
+
 # Create a k-index array for masking purposes
 kji = np.indices((nz,ny,nx))
 kindices = kji[0,:,:,:] + 1
@@ -121,17 +126,21 @@ z_bot=z_w.values
 z_bot=z_w.values+dz.values
 z_top=z_w.values
 
-# Define target vertical coordinates for MOC computation
-#   if zcoord:  use POP T-grid vertical coordinates
-#   if not zcoord:  define a set of well-chosen sigma2 levels 
 if zcoord:
+  # Define target vertical coordinates for MOC computation
+  #   zcoord:  use POP T-grid vertical coordinates
   sig2=z_t.values
   sig2_top=z_top
   sig2_bot=z_bot
   nsig = np.size(sig2)
   zsigu_top = np.zeros((nx,ny,nsig,nt)) + z_top[None,None,:,None]
   zsigu_bot = np.zeros((nx,ny,nsig,nt)) + z_bot[None,None,:,None]
+  uflux=uflux_z
+  vflux=vflux_z
+  wflux=wflux_z
 else:
+  # Define target vertical coordinates for MOC computation
+  #    not zcoord:  define a set of well-chosen sigma2 levels 
   tmp1 = np.linspace(28,34.8,35)
   tmp2 = np.linspace(35,35.9,10)
   tmp3 = np.linspace(36,38.0,41)
@@ -145,164 +154,130 @@ else:
   sig2_bot[-1] = sig2[-1]+tmp[-1]
   sig2_bot[0:-1] = sig2[0:-1]+tmp
 
-# Compute POP sigma2 field (NOTE: this is only necessary if zcoord=False)
-if not zcoord:
-   # using pop_tools:
-   depth=xr.DataArray(np.ones(np.shape(salt))*2000.,dims=salt.dims,coords=salt.coords)
-   sigma2=pop_tools.eos(salt=salt,temp=temp,depth=depth)
-   sigma2 = sigma2-1000.
-   # using gsw functions:
-   # first, convert model depth to pressure
-   #    (gsw function require numpy arrays, not xarray, so use ".values") 
-   #    (use [:,None,None] syntax to conform the z_t and tlat into 3D arrays)
-   #press = gsw.p_from_z(-z_t.values[:,None,None],tlat.values[None,:,:])
-   # compute absolute salinity from practical salinity
-   #SA = gsw.SA_from_SP(salt,press[None,:,:,:],tlon.values[None,None,:,:],tlat.values[None,None,:,:])
-   # compute conservative temperature from potential temperature
-   #CT = gsw.CT_from_pt(SA,temp.values)
-   #sigma2 = gsw.sigma2(SA,CT)
-   if debug:
-      pdt=sigma2.copy()
-      pdt.z_t.values=pdt.z_t.values/100
-   # convert to DataArray
-   sigma2 = xr.DataArray(sigma2,name='Sigma2',dims=pd.dims,coords=pd.coords)
-   sigma2.attrs=pd.attrs
-   sigma2.attrs['long_name']='Sigma referenced to 2000m'
-   sigma2.attrs['units']='kg/m^3'
+  # Compute POP sigma2 field (NOTE: this is only necessary if zcoord=False)
+  # using pop_tools:
+  depth=xr.DataArray(np.ones(np.shape(salt))*2000.,dims=salt.dims,coords=salt.coords)
+  sigma2=pop_tools.eos(salt=salt,temp=temp,depth=depth)
+  sigma2 = sigma2-1000.
+  # using gsw functions:
+  # first, convert model depth to pressure
+  #    (gsw function require numpy arrays, not xarray, so use ".values") 
+  #    (use [:,None,None] syntax to conform the z_t and tlat into 3D arrays)
+  #press = gsw.p_from_z(-z_t.values[:,None,None],tlat.values[None,:,:])
+  # compute absolute salinity from practical salinity
+  #SA = gsw.SA_from_SP(salt,press[None,:,:,:],tlon.values[None,None,:,:],tlat.values[None,None,:,:])
+  # compute conservative temperature from potential temperature
+  #CT = gsw.CT_from_pt(SA,temp.values)
+  #sigma2 = gsw.sigma2(SA,CT)
 
-   # Regrid from T-grid to U-grid
-   tmp=sigma2
-   tmpe=tmp.roll(nlon=-1,roll_coords=False)        # wraparound shift to west, without changing coords
-   tmpn=tmp.shift(nlat=-1)                         # shift to south, without changing coords
-   tmpne=tmpn.roll(nlon=-1,roll_coords=False)      # wraparound shift to west, without changing coords
-   tmpall=xr.concat([tmp,tmpe,tmpn,tmpne],dim='dummy')
-   sigma2=tmpall.mean('dummy')
-   sigma2.attrs=tmp.attrs                          # sigma2 now on U-grid
-   del tmp,tmpe,tmpn,tmpne,tmpall
+  # convert to DataArray & regrid from T-grid to U-grid
+  sigma2 = xr.DataArray(sigma2,name='Sigma2',dims=pd.dims,coords=pd.coords)
+  sigma2.attrs=pd.attrs
+  sigma2.attrs['long_name']='Sigma referenced to 2000m'
+  sigma2.attrs['units']='kg/m^3'
+  tmp=sigma2
+  tmpe=tmp.roll(nlon=-1,roll_coords=False)        # wraparound shift to west, without changing coords
+  tmpn=tmp.shift(nlat=-1)                         # shift to south, without changing coords
+  tmpne=tmpn.roll(nlon=-1,roll_coords=False)      # wraparound shift to west, without changing coords
+  tmpall=xr.concat([tmp,tmpe,tmpn,tmpne],dim='dummy')
+  sigma2=tmpall.mean('dummy')
+  sigma2.attrs=tmp.attrs                          # sigma2 now on U-grid
+  del tmp,tmpe,tmpn,tmpne,tmpall
 
-   # apply U-grid mask
-   mask=kindices>kmu.values[None,:,:]
-   sigma2.values[mask[None,:,:,:]]=np.nan
+  # apply U-grid mask & remove density inversions
+  mask=kindices>kmu.values[None,:,:]
+  sigma2.values[mask[None,:,:,:]]=np.nan
+  for iz in range(km-1,0,-1):
+     print(iz)
+     tmp1 = sigma2[:,iz,:,:].values
+     tmp2 = sigma2[:,iz-1,:,:].values
+     tmp3 = (~np.isnan(tmp1)) & (~np.isnan(tmp2)) & np.greater(tmp2,tmp1) 
+     tmp2[tmp3] = tmp1[tmp3]-1.e-5
+     sigma2.values[:,iz-1,:,:] = tmp2
 
-   # Remove density inversions
-   for iz in range(km-1,0,-1):
-      print(iz)
-      tmp1 = sigma2[:,iz,:,:].values
-      tmp2 = sigma2[:,iz-1,:,:].values
-      tmp3 = (~np.isnan(tmp1)) & (~np.isnan(tmp2)) & np.greater(tmp2,tmp1) 
-      tmp2[tmp3] = tmp1[tmp3]-1.e-5
-      sigma2.values[:,iz-1,:,:] = tmp2
+  # debug test: read in sigma2 from NCL code:
+  #tmpds = xr.open_dataset('/glade/scratch/yeager/g.DPLE.GECOIAF.T62_g16.009.chey/g.DPLE.GECOIAF.T62_g16.009.chey.pop.h.0301-01.MOCsig2.debug.nc')
+  #sigma2.values=tmpds.pdu.values
+  #  NOTE: this test shows that sigma2 differences are to blame for python/NCL discrepancies in MOC(sig2)!
 
-   if debug:
-      pdu=sigma2.copy()
-      pdu.z_t.values=pdu.z_t.values/100
+  # Find sigma2 layer interface depths on U-grid
+  sigma2.values[np.isnan(sigma2.values)]=mval
+  tmpsig=np.transpose(sigma2.values,axes=[3,2,1,0])
+  tmpkmu=np.transpose(kmu.values,axes=[1,0])
+  tmpdzu=np.transpose(dzu.values,axes=[2,1,0])
+  zsigu_top,zsigu_bot = moc_offline_0p1deg.sig2z(tmpsig,tmpkmu,z_t.values,tmpdzu,sig2_top,sig2_bot,mval,[nt,nz,ny,nx,nsig])
+  del tmpsig,tmpkmu
 
-   # debug test: read in sigma2 from NCL code:
-   #tmpds = xr.open_dataset('/glade/scratch/yeager/g.DPLE.GECOIAF.T62_g16.009.chey/g.DPLE.GECOIAF.T62_g16.009.chey.pop.h.0301-01.MOCsig2.debug.nc')
-   #sigma2.values=tmpds.pdu.values
-   #  NOTE: this test shows that sigma2 differences are to blame for python/NCL discrepancies in MOC(sig2)!
+  # Calculate horizontal & vertical volume fluxes:
+  tmpdzu=np.transpose(dzu.values,axes=[2,1,0])
+  tmpkmt=np.transpose(kmt.values,axes=[1,0])
+  tmpkmu=np.transpose(kmu.values,axes=[1,0])
+  tmpu=np.transpose(uflux_z.values.copy(),axes=[3,2,1,0])
+  tmpv=np.transpose(vflux_z.values.copy(),axes=[3,2,1,0])
+  uflux,vflux,dwflux = moc_offline_0p1deg.sig2fluxconv(tmpkmt,tmpkmu,z_top,tmpdzu,zsigu_top,zsigu_bot,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
+  time2=timer.time()
+  print('sig2fluxconv:  ',time2-time1,'s')
 
-   # Find sigma2 layer interface depths on U-grid
-   sigma2.values[np.isnan(sigma2.values)]=mval
-   tmpsig=np.transpose(sigma2.values,axes=[3,2,1,0])
-   tmpkmu=np.transpose(kmu.values,axes=[1,0])
-   tmpdzu=np.transpose(dzu.values,axes=[2,1,0])
-   zsigu_top,zsigu_bot = moc_offline_0p1deg.sig2z(tmpsig,tmpkmu,z_t.values,tmpdzu,sig2_top,sig2_bot,mval,[nt,nz,ny,nx,nsig])
-   del tmpsig,tmpkmu
+  # Compute WDXDY (m^3/s) as partial integral of dWDXDY from ocean bottom
+  uflux_sig=xr.DataArray(np.transpose(uflux,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
+     coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+     name='uedydz_sig')
+  vflux_sig=xr.DataArray(np.transpose(vflux,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
+     coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+     name='vedxdz_sig')
+  dwflux_sig=xr.DataArray(np.transpose(dwflux.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
+        coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+        name='dwedxdy_sig')
+  tmpdwflux = dwflux_sig[:,::-1,:,:].copy()
+  tmpdwflux.values[tmpdwflux.values>1e30]=np.nan
+  wflux_sig=tmpdwflux.cumsum(dim='sigma',skipna=True).copy()
+  wflux_sig.values[np.isnan(tmpdwflux.values)]=np.nan
+  wflux_sig=wflux_sig[:,::-1,:,:]
 
-# DEBUG: write sigma2 interface layer depth info to netcdf
-if debug:
-   tmparr1=xr.DataArray(np.transpose(zsigu_top,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-      coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
-      name='SIG_top')
-   tmparr2=xr.DataArray(np.transpose(zsigu_bot,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-      coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
-      name='SIG_bot')
-   tmparr3=tmparr2-tmparr1
-   tmparr4=tmparr1.min(dim='sigma')
-   tmparr5=tmparr2.where(tmparr2<1.e30).max(dim='sigma',skipna=True)
-   tmparr6=tmparr5-hu
-   debug_ds=tmparr3.to_dataset(name='SIG_zdiff')
-   debug_ds['SIG_top']=tmparr1
-   debug_ds['SIG_bot']=tmparr2
-   debug_ds['SIG_top_min']=tmparr4
-   debug_ds['SIG_bot_max']=tmparr5
-   debug_ds['HU']=hu
-   debug_ds['HUdiff']=tmparr6
-   if not zcoord:
-      debug_ds['pdt']=pdt
-      debug_ds['pdu']=pdu
-      debug_ds['SIG2']=sigma2
+  uflux=uflux_sig.copy()
+  vflux=vflux_sig.copy()
+  wflux=wflux_sig.copy()
 
-# Calculate volume fluxes binned in sigma-coordinates:
-#    UDYDZ, VDXDZ, dWDXDY (m^3/s) for each layer in z-coord
-uedydz = u_e*dyu*dzu	# m^3/s
-vedxdz = v_e*dxu*dzu	# m^3/s
-wedxdy = w_e*tarea	# m^3/s
-tmpdzu=np.transpose(dzu.values,axes=[2,1,0])
-tmpkmt=np.transpose(kmt.values,axes=[1,0])
-tmpkmu=np.transpose(kmu.values,axes=[1,0])
-tmpu=np.transpose(uedydz.values.copy(),axes=[3,2,1,0])
-tmpv=np.transpose(vedxdz.values.copy(),axes=[3,2,1,0])
-uflux,vflux,dwflux = moc_offline_0p1deg.sig2fluxconv(tmpkmt,tmpkmu,z_top,tmpdzu,zsigu_top,zsigu_bot,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
-time2=timer.time()
-print('sig2fluxconv:  ',time2-time1,'s')
-#del tmpkmt#,tmpu,tmpv
-
-# DEBUG: write vertically-integrated volume fluxes, from both z-coord & sigma-coord, to netcdf
-if debug:
-   uflux_z=xr.DataArray(uedydz.values,dims=['time','z_t','nlat','nlon'], \
-      coords={'time':time,'z_t':z_t.values,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
-      name='uedydz_z')
-   vflux_z=xr.DataArray(vedxdz.values,dims=['time','z_t','nlat','nlon'], \
-      coords={'time':time,'z_t':z_t.values,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
-      name='vedxdz_z')
-   uflux_sig=xr.DataArray(np.transpose(uflux,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-      coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
-      name='uedydz_sig')
-   vflux_sig=xr.DataArray(np.transpose(vflux,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-      coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
-      name='vedxdz_sig')
-   dwflux_sig=xr.DataArray(np.transpose(dwflux.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-      coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
-      name='dwedxdy_sig')
-   dwflux_sig_zint=dwflux_sig.where(dwflux_sig<1.e30).sum(dim='sigma').copy()
-   uflux_sig_zint=uflux_sig.where(uflux_sig<1.e30).sum(dim='sigma')
-   vflux_sig_zint=vflux_sig.where(vflux_sig<1.e30).sum(dim='sigma')
-   uflux_zint=uedydz.where(uedydz<1.e30).sum(dim='z_t')
-   vflux_zint=vedxdz.where(vedxdz<1.e30).sum(dim='z_t')
-#  debug_ds['dwflux_sig']=dwflux_sig.copy()
-   debug_ds['uflux_zint_fromsigma']=uflux_sig_zint
-   debug_ds['uflux_zint_fromz']=uflux_zint
-   debug_ds['vflux_zint_fromsigma']=vflux_sig_zint
-   debug_ds['vflux_zint_fromz']=vflux_zint
-   debug_ds['wflux_srf_fromsigma']=dwflux_sig_zint
-   debug_ds['wflux_srf_fromz']=wedxdy[:,0,:,:]
-#  debug_ds['uedydz_z']=uflux_z
-#  debug_ds['vedxdz_z']=vflux_z
-
-# Compute WDXDY (m^3/s) as partial integral of dWDXDY from ocean bottom
-dwflux_sig=xr.DataArray(np.transpose(dwflux.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-      coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
-      name='dwedxdy_sig')
-tmpdwflux = dwflux_sig[:,::-1,:,:].copy()
-tmpdwflux.values[tmpdwflux.values>1e30]=np.nan
-#wflux_sig=tmpdwflux.where(tmpdwflux<1.e30).cumsum(dim='sigma',skipna=True).copy()
-wflux_sig=tmpdwflux.cumsum(dim='sigma',skipna=True).copy()
-wflux_sig.values[np.isnan(tmpdwflux.values)]=np.nan
-wflux_sig=wflux_sig[:,::-1,:,:]
-
-if debug:
-#   debug_ds['wflux_sig']=wflux_sig.copy()
-   debug_ds.to_netcdf(out_file_db)
-
+  if debug:
+     # DEBUG: write sigma2 interface layer depth info to netcdf
+     tmparr1=xr.DataArray(np.transpose(zsigu_top,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
+        coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+        name='SIG_top')
+     tmparr2=xr.DataArray(np.transpose(zsigu_bot,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
+        coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+        name='SIG_bot')
+     tmparr3=tmparr2-tmparr1
+     tmparr4=tmparr1.min(dim='sigma')
+     tmparr5=tmparr2.where(tmparr2<1.e30).max(dim='sigma',skipna=True)
+     tmparr6=tmparr5-hu
+     debug_ds=tmparr3.to_dataset(name='SIG_zdiff')
+     debug_ds['SIG_top']=tmparr1
+     debug_ds['SIG_bot']=tmparr2
+     debug_ds['SIG_top_min']=tmparr4
+     debug_ds['SIG_bot_max']=tmparr5
+     debug_ds['HU']=hu
+     debug_ds['HUdiff']=tmparr6
+     debug_ds['SIG2']=sigma2
+     # DEBUG: write vertically-integrated volume fluxes, from both z-coord & sigma-coord, to netcdf
+     dwflux_sig_zint=dwflux_sig.where(dwflux_sig<1.e30).sum(dim='sigma').copy()
+     uflux_sig_zint=uflux_sig.where(uflux_sig<1.e30).sum(dim='sigma')
+     vflux_sig_zint=vflux_sig.where(vflux_sig<1.e30).sum(dim='sigma')
+     uflux_zint=uflux_z.where(uflux_z<1.e30).sum(dim='z_t')
+     vflux_zint=vflux_z.where(vflux_z<1.e30).sum(dim='z_t')
+     debug_ds['uflux_zint_fromsigma']=uflux_sig_zint
+     debug_ds['uflux_zint_fromz']=uflux_zint
+     debug_ds['vflux_zint_fromsigma']=vflux_sig_zint
+     debug_ds['vflux_zint_fromz']=vflux_zint
+     debug_ds['wflux_srf_fromsigma']=dwflux_sig_zint
+     debug_ds['wflux_srf_fromz']=wflux_z[:,0,:,:]
+     debug_ds.to_netcdf(out_file_db)
 
 # Compute MOC in sigma-space
 #   a. integrate w_sigma in zonal direction
 rmlak = np.zeros((nx,ny,2),dtype=np.int)
 tmprmask = np.transpose(rmask.values,axes=[1,0])
 tmptlat = np.transpose(tlat.values,axes=[1,0])
-tmpw = np.transpose(np.where(~np.isnan(wflux_sig.values.copy()),wflux_sig.values.copy(),mval),axes=[3,2,1,0])
+tmpw = np.transpose(np.where(~np.isnan(wflux.values.copy()),wflux.values.copy(),mval),axes=[3,2,1,0])
 rmlak[:,:,0] = np.where(tmprmask>0,1,0)
 rmlak[:,:,1] = np.where((tmprmask>=6) & (tmprmask<=11),1,0)
 tmpmoc = moc_offline_0p1deg.moczonalint(tmptlat,lat_aux_grid,rmlak,tmpw,mval,[nyaux,nx,ny,nz,nt,ntr])
@@ -320,27 +295,28 @@ MOCnew = MOCnew*1.0e-6
 #    a. find starting j-index for Atlantic region
 lat_aux_atl_start = ny
 for n in range(1,ny):
-    section = (rmlak[:,n,1] == 1)
+    section = (rmlak[:,n-1,1] == 1)
     if (section.any()):
-       lat_aux_atl_start = n-1
+       lat_aux_atl_start = n-2
        break
 # print("lat_aux_atl_start= ",lat_aux_atl_start)
 
 #    b. regrid VDXDZ in sigma-coord from ULONG,ULAT to TLONG,ULAT grid
-tmp=vflux_sig
+tmp=vflux
 tmpw=tmp.roll(nlon=1,roll_coords=False)        
 tmpall=xr.concat([tmp,tmpw],dim='dummy')
-vflux_sig=tmpall.where(tmpall<1e30).mean('dummy')
+vflux=tmpall.where(tmpall<1e30).mean('dummy')
 del tmp,tmpw,tmpall
 #    c. zonal integral of Atlantic points
 atlmask=xr.DataArray(np.where(rmask==6,1,0),dims=['nlat','nlon'])
 atlmask=atlmask.roll(nlat=-1,roll_coords=False)
-vflux_sig_xint=vflux_sig.where(atlmask==1).sum(dim='nlon')
-amoc_s=-vflux_sig_xint[0,::-1,lat_aux_atl_start].cumsum(dim='sigma')
-#amoc_s_new=-np.cumsum(vflux_sig_xint.values[0,::-1,lat_aux_atl_start-1],axis=0)
+vflux_xint=vflux.where(atlmask==1).sum(dim='nlon')
+if zcoord:
+  amoc_s=-vflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='z_t')
+else:
+  amoc_s=-vflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='sigma')
 amoc_s = amoc_s[::-1]*1.e-6
 print("amoc_s=",amoc_s)
-#Something's wrong... need to debug southern boundary addition:
 MOCnew.values[:,1,:,:] = MOCnew.values[:,1,:,:] + amoc_s.values[None,:,None]
 
 
