@@ -8,17 +8,17 @@ import pop_tools
 
 # Set Options
 time1=timer.time()
-zcoord=False		# True-->compute MOC(z), False-->compute MOC(sigma2)
-debug=True		# Only applies for zcoord=False
+zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
+debug=False		# Only applies for zcoord=False
 
 # Define input/output streams
 in_dir='/glade/p/cgd/oce/projects/JRA55/IAF/g.e20.G.TL319_t13.control.001/ocn/tavg/'
 out_dir='/glade/scratch/yeager/g.e20.G.TL319_t13.control.001/'
 in_file = in_dir+'g.e20.G.TL319_t13.control.001.pop.tavg.0042-0061.nc'
-out_file = out_dir+'MOCsig2.0042-0061.python.nc'
-out_file_db = out_dir+'MOCsig2.0042-0061.python.debug.nc'
-#out_file = out_dir+'MOCz.0042-0061.python.nc'
-#out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
+#out_file = out_dir+'MOCsig2.0042-0061.python.test.nc'
+#out_file_db = out_dir+'MOCsig2.0042-0061.python.debug.nc'
+out_file = out_dir+'MOCz.0042-0061.python.nc'
+out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
 
 # Define needed data files
 POP1deg_gridfile='/glade/p/cgd/oce/people/yeager/POP_grids/gx1v6_ocn.nc'
@@ -196,7 +196,7 @@ else:
      sigma2.values[:,iz-1,:,:] = tmp2
 
   # debug test: read in sigma2 from NCL code:
-  #tmpds = xr.open_dataset('/glade/scratch/yeager/g.DPLE.GECOIAF.T62_g16.009.chey/g.DPLE.GECOIAF.T62_g16.009.chey.pop.h.0301-01.MOCsig2.debug.nc')
+  #tmpds = xr.open_dataset('/glade/scratch/yeager/g.e20.G.TL319_t13.control.001/MOCsig2.ncl.0042-0061.debug.nc')
   #sigma2.values=tmpds.pdu.values
   #  NOTE: this test shows that sigma2 differences are to blame for python/NCL discrepancies in MOC(sig2)!
 
@@ -279,7 +279,7 @@ tmprmask = np.transpose(rmask.values,axes=[1,0])
 tmptlat = np.transpose(tlat.values,axes=[1,0])
 tmpw = np.transpose(np.where(~np.isnan(wflux.values.copy()),wflux.values.copy(),mval),axes=[3,2,1,0])
 rmlak[:,:,0] = np.where(tmprmask>0,1,0)
-rmlak[:,:,1] = np.where((tmprmask>=6) & (tmprmask<=11),1,0)
+rmlak[:,:,1] = np.where((tmprmask>=6) & (tmprmask<=12),1,0)  	# include Baltic for 0p1
 tmpmoc = moc_offline_0p1deg.moczonalint(tmptlat,lat_aux_grid,rmlak,tmpw,mval,[nyaux,nx,ny,nz,nt,ntr])
 print('tmpmoc shape',np.shape(tmpmoc))
 
