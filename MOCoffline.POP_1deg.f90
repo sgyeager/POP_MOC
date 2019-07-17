@@ -1,11 +1,25 @@
 !*******************************************************************
-subroutine moczonalint(nyaux,nx,ny,nz,nt,ntr,tlat,lat_aux_grid, &
-                         rmlak,work1,wmsg,moc)
-
+subroutine wzonalsum(nyaux,nx,ny,nz,nt,ntr,tlat,lat_aux_grid, &
+                         rmlak,wflux,wmsg,wfluxzonsum)
+!
+! Routine to compute zonal sum of wflux for computing MOC using
+! the w-method: 
+! Psi(y,z) = SUM(y_s,y: SUM(x_w,x_e: wflux(x,y,z) ))
+! This routine returns the inner zonal sum.
+!
+! Input:
+!	wflux(x,y,z,t) =w*dx*dy  (m^3/s)
+!          where x,y is model T-grid
+!
+! Output:
+!	wfluxzonsum(y2,z,nr,t)  (m^3/s)
+!   	   where y2 is the meridional grid for MOC
+!                nr is a region dimension for (Global, Atlantic)
+!
       implicit none
       integer, intent(in) ::  nyaux,nx,ny,nz,ntr,nt 
-      real*8, intent(in) ::  work1(nx,ny,nz,nt), wmsg
-      real*8, intent(out) ::  moc(nyaux,nz,ntr,nt)
+      real*8, intent(in) ::  wflux(nx,ny,nz,nt), wmsg
+      real*8, intent(out) ::  wfluxzonsum(nyaux,nz,ntr,nt)
       real*8, intent(in) ::     lat_aux_grid(nyaux), tlat(nx,ny)
       integer, intent(in) ::  rmlak(nx,ny,ntr)
       integer ::  iyy,ix,iy,iz,it,ir,icnt1,icnt2,icnt3
@@ -15,12 +29,11 @@ subroutine moczonalint(nyaux,nx,ny,nz,nt,ntr,tlat,lat_aux_grid, &
        do ir=1,ntr
         do iz=1,nz
          do iyy=1,nyaux
-          moc(iyy,iz,ir,it) = 0.0d0 
+          wfluxzonsum(iyy,iz,ir,it) = 0.0d0 
          end do
         end do
        end do
       end do
-!     print *, 'made it into mocloops!'
 
 ! globe [note: rmlak(:,:,1)]
 
@@ -33,8 +46,8 @@ subroutine moczonalint(nyaux,nx,ny,nz,nt,ntr,tlat,lat_aux_grid, &
                  rmlak(ix,iy,1).eq.1) then
 
                do iz=1,nz
-                    if (work1(ix,iy,iz,it).ne.wmsg)  then          
-        moc(iyy,iz,1,it) = moc(iyy,iz,1,it) + work1(ix,iy,iz,it)
+                    if (wflux(ix,iy,iz,it).ne.wmsg)  then          
+        wfluxzonsum(iyy,iz,1,it) = wfluxzonsum(iyy,iz,1,it) + wflux(ix,iy,iz,it)
                     end if
                end do
              end if
@@ -54,8 +67,8 @@ subroutine moczonalint(nyaux,nx,ny,nz,nt,ntr,tlat,lat_aux_grid, &
                  rmlak(ix,iy,2).eq.1) then
 
                do iz=1,nz
-                    if (work1(ix,iy,iz,it).ne.wmsg)  then
-        moc(iyy,iz,2,it) = moc(iyy,iz,2,it) + work1(ix,iy,iz,it)
+                    if (wflux(ix,iy,iz,it).ne.wmsg)  then
+        wfluxzonsum(iyy,iz,2,it) = wfluxzonsum(iyy,iz,2,it) + wflux(ix,iy,iz,it)
                     end if
                end do
              end if
@@ -64,28 +77,43 @@ subroutine moczonalint(nyaux,nx,ny,nz,nt,ntr,tlat,lat_aux_grid, &
        end do
       end do
 
-end subroutine moczonalint
+end subroutine wzonalsum
 !*******************************************************************
 
 !*******************************************************************
-subroutine sig2fluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz,zsigtop, &
-             zsigbot,workuNE,workvNE,uout,vout,wout,mval2)
+subroutine fluxconv(nt,nz,ny,nx,targnz,kmt,ztop,zbot,dz,targztop, &
+             targzbot,workuNE,workvNE,uout,vout,wout,mval)
+!
+! Routine to compute vertical volume flux given model
+! horizontal fluxes on U-grid: workuNE,workvNE. The horizontal fluxes
+! are first partitioned from model z-grid (ztop,zbot,dz) to a new target 
+! z-grid (targztop,targzbot) before applying model divergence operator.
+! This gives dwflux/dz on model T-grid, which is then integrated in
+! vertical to give wflux on (T-grid, targztop).
+!
+! Outputs:
+!	uout:  grid-oriented zonal volume flux on new z-grid
+!	vout:  grid-oriented meridional volume flux on new z-grid
+!	wout:  vertical volume flux on new z-grid
+!
       implicit none
-      integer, intent(in) ::  nt,nz,ny,nx,nsig, kmt(nx,ny)
+      integer, intent(in) ::  nt,nz,ny,nx,targnz, kmt(nx,ny)
       real, intent(in) ::    ztop(nz), zbot(nz), dz(nz)
-      real, intent(in) ::    zsigtop(nx,ny,nsig,nt),zsigbot(nx,ny,nsig,nt)
-      real*8, intent(in) ::  workuNE(nx,ny,nz,nt), workvNE(nx,ny,nz,nt),mval2
-      real*8, intent(out) ::  wout(nx,ny,nsig,nt), vout(nx,ny,nsig,nt)
-      real*8, intent(out) ::  uout(nx,ny,nsig,nt)
-      integer :: it,isig,iz,iy,ix,ij,ixx(4),iyy(4)
-      real*8 ::  wgt(nsig),zbsig,ztsig,zb,zt
+      real, intent(in) ::    targztop(nx,ny,targnz,nt),targzbot(nx,ny,targnz,nt)
+      real*8, intent(in) ::  workuNE(nx,ny,nz,nt), workvNE(nx,ny,nz,nt),mval
+      real*8, intent(out) ::  wout(nx,ny,targnz,nt), vout(nx,ny,targnz,nt)
+      real*8, intent(out) ::  uout(nx,ny,targnz,nt)
+      integer :: it,iz2,iz,iy,ix,ij,ixx(4),iyy(4)
+      real*8 ::  wgt(targnz),zbsig,ztsig,zb,zt
       real*8 ::  dzsig, sumwgt, udydz,vdxdz
       real*8 ::  fueW,fueE,fvnN,fvnS
-      real*8 ::  tmpusig(4,nsig),tmpvsig(4,nsig)
+      real*8 ::  tmpu(4,targnz),tmpv(4,targnz)
 
-      uout = mval2
-      vout = mval2
-      wout = mval2
+!     uout = mval
+!     vout = mval
+      uout = 0.0
+      vout = 0.0
+      wout = 0.0
 
       do it=1,nt
       do iy=2,ny
@@ -112,8 +140,8 @@ subroutine sig2fluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz,zsigtop, &
           iyy(4) = iy-1
 
            do ij=1,4
-             tmpusig(ij,:) = mval2
-             tmpvsig(ij,:) = mval2
+             tmpu(ij,:) = mval
+             tmpv(ij,:) = mval
             do iz=1,nz
              zb = zbot(iz)
              zt = ztop(iz)
@@ -124,10 +152,10 @@ subroutine sig2fluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz,zsigtop, &
                 udydz = 0.
                 vdxdz = 0.
              end if
-             do isig=1,nsig
-              zbsig = zsigbot(ixx(ij),iyy(ij),isig,it)
-              ztsig = zsigtop(ixx(ij),iyy(ij),isig,it)
-              wgt(isig) = 0.0
+             do iz2=1,targnz
+              zbsig = targzbot(ixx(ij),iyy(ij),iz2,it)
+              ztsig = targztop(ixx(ij),iyy(ij),iz2,it)
+              wgt(iz2) = 0.0
               if (zbsig.lt.1.e15) then
                dzsig = zbsig-ztsig
 ! compute wgt() array, which corresponds to the fraction
@@ -137,42 +165,42 @@ subroutine sig2fluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz,zsigtop, &
 
 !  if this z-layer falls entirely within the isopycnal layer:
                if (zb.le.zbsig.and.zt.ge.ztsig) then
-                wgt(isig) = 1.0
+                wgt(iz2) = 1.0
                end if
 !  if only bottom of z-cell is within isopycnal layer:
                if (zb.ge.ztsig.and.zt.lt.ztsig) then
-                wgt(isig) = (zb-ztsig)/dz(iz)
+                wgt(iz2) = (zb-ztsig)/dz(iz)
                end if
 !  if only top of z-cell is within isopycnal layer:
                if (zt.le.zbsig.and.zb.gt.zbsig) then
-                wgt(isig) = (zbsig-zt)/dz(iz)
+                wgt(iz2) = (zbsig-zt)/dz(iz)
                end if
 !  if the isopycnal layer falls entirely within the z-layer:
                if (zt.lt.ztsig.and.zb.gt.zbsig) then
-                wgt(isig) = dzsig/dz(iz)
+                wgt(iz2) = dzsig/dz(iz)
                end if
               end if
              end do
 
-! Use normalized wgt() array to compute tmpusig, tmpvsig
+! Use normalized wgt() array to compute tmpu, tmpv
              sumwgt = sum(wgt)
 !            if (sumwgt.ne.1.0) then
-!              write (6,*) 'sig2fluxconv:: ERROR at i,j,k = ',ix,iy,iz,
+!              write (6,*) 'fluxconv:: ERROR at i,j,k = ',ix,iy,iz,
 !    +      sumwgt
 !            end if
              if (sumwgt.ne.0.0) then
-               do isig=1,nsig
-                if (wgt(isig).ne.0.) then
-                 wgt(isig) = wgt(isig)/sumwgt
-                 if (tmpusig(ij,isig).eq.mval2) then
-                  tmpusig(ij,isig)= wgt(isig)*udydz
+               do iz2=1,targnz
+                if (wgt(iz2).ne.0.) then
+                 wgt(iz2) = wgt(iz2)/sumwgt
+                 if (tmpu(ij,iz2).eq.mval) then
+                  tmpu(ij,iz2)= wgt(iz2)*udydz
                  else
-                  tmpusig(ij,isig)=tmpusig(ij,isig)+wgt(isig)*udydz
+                  tmpu(ij,iz2)=tmpu(ij,iz2)+wgt(iz2)*udydz
                  end if
-                 if (tmpvsig(ij,isig).eq.mval2) then
-                  tmpvsig(ij,isig)= wgt(isig)*vdxdz
+                 if (tmpv(ij,iz2).eq.mval) then
+                  tmpv(ij,iz2)= wgt(iz2)*vdxdz
                  else
-                  tmpvsig(ij,isig)=tmpvsig(ij,isig)+wgt(isig)*vdxdz
+                  tmpv(ij,iz2)=tmpv(ij,iz2)+wgt(iz2)*vdxdz
                  end if
                 end if
                end do
@@ -181,23 +209,29 @@ subroutine sig2fluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz,zsigtop, &
             end do
            end do
 !  This ends the loops over all z and all 4 corners.
-!  Now, tmpusig, tmpvsig are defined, so compute
+!  Now, tmpu, tmpv are defined, so compute
 !  convergence and fill vout and wout:
-          do isig=1,nsig
-           uout(ix,iy,isig,it) = tmpusig(1,isig)
-           vout(ix,iy,isig,it) = tmpvsig(1,isig)
-           if (all(tmpvsig(:,isig).eq.mval2).and. & 
-                all(tmpusig(:,isig).eq.mval2)) then
-            wout(ix,iy,isig,it) = mval2
+          do iz2=1,targnz
+           uout(ix,iy,iz2,it) = tmpu(1,iz2)
+           vout(ix,iy,iz2,it) = tmpv(1,iz2)
+           if (all(tmpv(:,iz2).eq.mval).and. & 
+                all(tmpu(:,iz2).eq.mval)) then
+            wout(ix,iy,iz2,it) = 0.0
            else
-            where(tmpusig(:,isig).eq.mval2) tmpusig(:,isig)=0.
-            where(tmpvsig(:,isig).eq.mval2) tmpvsig(:,isig)=0.
-            fueE = 0.5*(tmpusig(1,isig)+tmpusig(4,isig))
-            fueW = 0.5*(tmpusig(2,isig)+tmpusig(3,isig))
-            fvnN = 0.5*(tmpvsig(1,isig)+tmpvsig(2,isig))
-            fvnS = 0.5*(tmpvsig(3,isig)+tmpvsig(4,isig))
-            wout(ix,iy,isig,it) = -(fueE-fueW+fvnN-fvnS)
+            where(tmpu(:,iz2).eq.mval) tmpu(:,iz2)=0.
+            where(tmpv(:,iz2).eq.mval) tmpv(:,iz2)=0.
+            fueE = 0.5*(tmpu(1,iz2)+tmpu(4,iz2))
+            fueW = 0.5*(tmpu(2,iz2)+tmpu(3,iz2))
+            fvnN = 0.5*(tmpv(1,iz2)+tmpv(2,iz2))
+            fvnS = 0.5*(tmpv(3,iz2)+tmpv(4,iz2))
+            wout(ix,iy,iz2,it) = -(fueE-fueW+fvnN-fvnS)
            end if
+          end do
+
+          !  vertical sum
+          do iz2=1,targnz-1
+            wout(ix,iy,targnz-iz2,it) = wout(ix,iy,targnz-iz2,it) + &
+                 wout(ix,iy,targnz-iz2+1,it)
           end do
 
         end if
@@ -205,7 +239,7 @@ subroutine sig2fluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz,zsigtop, &
       end do
       end do
 
-end subroutine sig2fluxconv
+end subroutine fluxconv
 !*******************************************************************
 
 !*******************************************************************
