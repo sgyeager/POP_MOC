@@ -8,8 +8,8 @@ import pop_tools
 
 # Set Options
 time1=timer.time()
-zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
-debug=False		# Only applies for zcoord=False
+zcoord=False		# True-->compute MOC(z), False-->compute MOC(sigma2)
+debug=True		# Only applies for zcoord=False
 computew=False          # Only applies for zcoord=True. True--> w will be computed from div(u,v)
 
 # Define input/output streams
@@ -17,10 +17,10 @@ moc_template_file = './moc_template.nc'
 in_dir='/glade/p/cgd/oce/projects/JRA55/IAF/g.e20.G.TL319_t13.control.001/ocn/tavg/'
 out_dir='/glade/scratch/yeager/g.e20.G.TL319_t13.control.001/'
 in_file = in_dir+'g.e20.G.TL319_t13.control.001.pop.tavg.0042-0061.nc'
-#out_file = out_dir+'MOCsig2.0042-0061.python.test.nc'
-#out_file_db = out_dir+'MOCsig2.0042-0061.python.debug.nc'
-out_file = out_dir+'MOCz.0042-0061.python.nc'
-out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
+out_file = out_dir+'MOCsig2.0042-0061.python.test.nc'
+out_file_db = out_dir+'MOCsig2.0042-0061.python.debug.nc'
+#out_file = out_dir+'MOCz.0042-0061.python.nc'
+#out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
 
 # Regression test for MOC(z) computation:
 # in_dir='/glade/p/cgd/oce/projects/JRA55/IAF/g.e20.G.TL319_t13.control.001/ocn/tavg/'
@@ -145,6 +145,9 @@ z_bot=z_w.values
 z_bot=z_w.values+dz.values
 z_top=z_w.values
 
+time2=timer.time()
+print('Timing:  Input data read =  ',time2-time1,'s')
+
 if zcoord:
   # Define target vertical coordinates for MOC computation
   #   zcoord:  use POP T-grid vertical coordinates
@@ -210,6 +213,8 @@ else:
   # compute conservative temperature from potential temperature
   #CT = gsw.CT_from_pt(SA,temp.values)
   #sigma2 = gsw.sigma2(SA,CT)
+  time3=timer.time()
+  print('Timing:  EOS call =  ',time3-time2,'s')
 
   # convert to DataArray & regrid from T-grid to U-grid
   sigma2 = xr.DataArray(sigma2,name='Sigma2',dims=pd.dims,coords=pd.coords)
@@ -229,12 +234,13 @@ else:
   mask=kindices>kmu.values[None,:,:]
   sigma2.values[mask[None,:,:,:]]=np.nan
   for iz in range(km-1,0,-1):
-     print(iz)
      tmp1 = sigma2[:,iz,:,:].values
      tmp2 = sigma2[:,iz-1,:,:].values
      tmp3 = (~np.isnan(tmp1)) & (~np.isnan(tmp2)) & np.greater(tmp2,tmp1) 
      tmp2[tmp3] = tmp1[tmp3]-1.e-5
      sigma2.values[:,iz-1,:,:] = tmp2
+  time4=timer.time()
+  print('Timing:  Sigma remapping & correcting inversions =  ',time4-time3,'s')
 
   # debug test: read in sigma2 from NCL code:
   #tmpds = xr.open_dataset('/glade/scratch/yeager/g.e20.G.TL319_t13.control.001/MOCsig2.ncl.0042-0061.debug.nc')
@@ -248,6 +254,8 @@ else:
   tmpdzu=np.transpose(dzu.values,axes=[2,1,0])
   target_z_top,target_z_bot = moc_offline_0p1deg.sig2z(tmpsig,tmpkmu,z_t.values,tmpdzu,sig2_top,sig2_bot,mval,[nt,nz,ny,nx,nsig])
   del tmpsig,tmpkmu
+  time5=timer.time()
+  print('Timing:  sig2z call =  ',time5-time4,'s')
 
   # Calculate horizontal & vertical volume fluxes:
   tmpdzu=np.transpose(dzu.values,axes=[2,1,0])
@@ -268,6 +276,8 @@ else:
   ueflux=ueflux_sig.copy()
   veflux=veflux_sig.copy()
   weflux=weflux_sig.copy()
+  time6=timer.time()
+  print('Timing:  fluxconv call =  ',time6-time5,'s')
 
   if debug:
      # DEBUG: write sigma2 interface layer depth info to netcdf
@@ -301,9 +311,12 @@ else:
      debug_ds['weflux_srf_fromsigma']=weflux_sig[:,0,:,:]
      debug_ds['weflux_srf_fromz']=weflux_z[:,0,:,:]
      debug_ds.to_netcdf(out_file_db)
+     time7=timer.time()
+     print('Timing:  debug stuff =  ',time7-time6,'s')
 
 # Compute MOC
 #   a. integrate wflux in zonal direction (zonal sum of wflux already in m^3/s)
+time8=timer.time()
 rmlak = np.zeros((nx,ny,2),dtype=np.int)
 tmprmask = np.transpose(rmask.values,axes=[1,0])
 tmptlat = np.transpose(tlat.values,axes=[1,0])
@@ -313,6 +326,8 @@ tmpw = np.transpose(np.where(~np.isnan(weflux.values.copy()),weflux.values.copy(
 tmpmoc_e = moc_offline_0p1deg.wzonalsum(tmptlat,lat_aux_grid,rmlak,tmpw,mval,[nyaux,nx,ny,nz,nt,ntr])
 tmpmoc_e=np.single(np.append(tmpmoc_e,np.zeros((nyaux,1,ntr,nt)),axis=1))       # add ocean bottom
 #print('tmpmoc shape',np.shape(tmpmoc))
+time9=timer.time()
+print('Timing:  wzonalsum call =  ',time9-time8,'s')
 
 #   b. integrate in meridional direction
 if zcoord:
@@ -329,6 +344,8 @@ MOCnew = MOCnew.where(MOCnew<mval).cumsum(dim='lat_aux_grid')
 MOCnew = MOCnew*1.0e-6
 MOCnew.attrs={'units':'Sverdrups','long_name':'Meridional Overturning Circulation'}
 MOCnew.encoding['_FillValue']=mval
+time10=timer.time()
+print('Timing:  meridional integration =  ',time10-time9,'s')
 
 # Add MOC boundary condition at Atlantic southern boundary
 #    a. find starting j-index for Atlantic region
@@ -356,12 +373,16 @@ else:
   amoc_s_e=-veflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='sigma')
 amoc_s_e = amoc_s_e[::-1]*1.e-6
 MOCnew.values[:,1,0:mocnz-1,:] = MOCnew.values[:,1,0:mocnz-1,:] + amoc_s_e.values[None,:,None]
+time11=timer.time()
+print('Timing:  Atl southern boundary stuff =  ',time11-time10,'s')
 
 
 #8.    Write output to netcdf
 #MOCnew.encoding=moc.encoding
 out_ds=MOCnew.to_dataset(name='MOC')
 out_ds.to_netcdf(out_file)
+time12=timer.time()
+print('Timing:  writing output =  ',time12-time11,'s')
 
-time2=timer.time()
-print('DONE creating ',out_file,':  ',time2-time1,'s')
+time13=timer.time()
+print('DONE creating ',out_file,'.  Total time = ',time13-time1,'s')
