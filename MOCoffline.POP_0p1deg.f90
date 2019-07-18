@@ -216,7 +216,7 @@ subroutine fluxconv(nt,nz,ny,nx,targnz,kmt,kmu,ztop,dzu,targztop, &
            vout(ix,iy,iz2,it) = tmpv(1,iz2)
            if (all(tmpv(:,iz2).eq.mval).and. & 
                 all(tmpu(:,iz2).eq.mval)) then
-            wout(ix,iy,iz2,it) = mval
+            wout(ix,iy,iz2,it) = 0.0
            else
             where(tmpu(:,iz2).eq.mval) tmpu(:,iz2)=0.
             where(tmpv(:,iz2).eq.mval) tmpv(:,iz2)=0.
