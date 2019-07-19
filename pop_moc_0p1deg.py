@@ -8,7 +8,7 @@ import pop_tools
 
 # Set Options
 time1=timer.time()
-zcoord=False		# True-->compute MOC(z), False-->compute MOC(sigma2)
+zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
 debug=True		# Only applies for zcoord=False
 computew=False          # Only applies for zcoord=True. True--> w will be computed from div(u,v)
 
@@ -17,10 +17,10 @@ moc_template_file = './moc_template.nc'
 in_dir='/glade/p/cgd/oce/projects/JRA55/IAF/g.e20.G.TL319_t13.control.001/ocn/tavg/'
 out_dir='/glade/scratch/yeager/g.e20.G.TL319_t13.control.001/'
 in_file = in_dir+'g.e20.G.TL319_t13.control.001.pop.tavg.0042-0061.nc'
-out_file = out_dir+'MOCsig2.0042-0061.python.test.nc'
-out_file_db = out_dir+'MOCsig2.0042-0061.python.debug.nc'
-#out_file = out_dir+'MOCz.0042-0061.python.nc'
-#out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
+#out_file = out_dir+'MOCsig2.0042-0061.python.test.nc'
+#out_file_db = out_dir+'MOCsig2.0042-0061.python.debug.nc'
+out_file = out_dir+'MOCz.0042-0061.python.nc'
+out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
 
 # Regression test for MOC(z) computation:
 # in_dir='/glade/p/cgd/oce/projects/JRA55/IAF/g.e20.G.TL319_t13.control.001/ocn/tavg/'
@@ -124,13 +124,6 @@ mval=pd.encoding['_FillValue']
 # Create a k-index array for masking purposes
 kji = np.indices((nz,ny,nx))
 kindices = kji[0,:,:,:] + 1
-
-# Zero out flow below bottom:
-#mask=kindices>kmu.values[None,:,:]
-#u_e.values[mask[None,:,:,:]]=0.
-#v_e.values[mask[None,:,:,:]]=0.
-#mask=kindices>kmt.values[None,:,:]
-#w_e.values[mask[None,:,:,:]]=0.
 
 # grid-oriented volume fluxes 
 ueflux_z = u_e*dyu*dzu    # m^3/s
@@ -358,11 +351,12 @@ for n in range(1,ny):
 # print("lat_aux_atl_start= ",lat_aux_atl_start)
 
 #    b. regrid VDXDZ from ULONG,ULAT to TLONG,ULAT grid
-tmp=veflux
-tmpw=tmp.roll(nlon=1,roll_coords=False)        
-tmpall=xr.concat([tmp,tmpw],dim='dummy')
-veflux=tmpall.where(tmpall<1e30).mean('dummy')
-del tmp,tmpw,tmpall
+#tmp=veflux
+#tmpw=tmp.roll(nlon=1,roll_coords=False)        
+#tmpall=xr.concat([tmp,tmpw],dim='dummy')
+#veflux=tmpall.where(tmpall<1e30).mean('dummy')
+#del tmp,tmpw,tmpall
+veflux = veflux.where(veflux<1e30)
 #    c. zonal integral of Atlantic points
 atlmask=xr.DataArray(np.where(rmask==6,1,0),dims=['nlat','nlon'])
 atlmask=atlmask.roll(nlat=-1,roll_coords=False)

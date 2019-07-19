@@ -152,6 +152,9 @@ z_bot=z_w.values
 z_bot=z_w.values+dz.values
 z_top=z_w.values
 
+time2=timer.time()
+print('Timing:  Input data read =  ',time2-time1,'s')
+
 if zcoord:
   # Define target vertical coordinates for MOC computation
   #   zcoord:  use POP T-grid vertical coordinates
@@ -161,13 +164,13 @@ if zcoord:
   # Define vertical volume flux 
   if computew:
      targnz=nz
-     target_z_top = np.zeros((nx,ny,targnz,nt)) + z_top[None,None,:,None]
-     target_z_bot = np.zeros((nx,ny,targnz,nt)) + z_bot[None,None,:,None]
+     targ_ztop = np.zeros((nx,ny,targnz,nt)) + z_top[None,None,:,None]
+     targ_zbot = np.zeros((nx,ny,targnz,nt)) + z_bot[None,None,:,None]
      # Calculate horizontal & vertical volume fluxes:
      tmpkmt=np.transpose(kmt.values,axes=[1,0])
      tmpu=np.transpose(ueflux_z.values.copy(),axes=[3,2,1,0])
      tmpv=np.transpose(veflux_z.values.copy(),axes=[3,2,1,0])
-     utmp,vtmp,wtmp = moc_offline_1deg.fluxconv(tmpkmt,z_top,z_bot,dz.values,target_z_top,target_z_bot,tmpu,tmpv,mval,[nt,nz,ny,nx,targnz])
+     utmp,vtmp,wtmp = moc_offline_1deg.fluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop,targ_zbot,tmpu,tmpv,mval,[nt,nz,ny,nx,targnz])
      ueflux=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
            coords={'time':time,'z_t':z_t,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
            name='uedydz',attrs={'units':'m^3/s'})
@@ -221,8 +224,10 @@ else:
   # compute conservative temperature from potential temperature
   #CT = gsw.CT_from_pt(SA,temp.values)
   #sigma2 = gsw.sigma2(SA,CT)
+  time3=timer.time()
+  print('Timing:  EOS call =  ',time3-time2,'s')
 
-  # convert to DataArray & regrid from T-grid to U-grid
+  # convert to DataArray & regrid from T-grid to: U-grid and T/U-combo grids
   sigma2 = xr.DataArray(sigma2,name='Sigma2',dims=pd.dims,coords=pd.coords)
   sigma2.attrs=pd.attrs
   sigma2.attrs['long_name']='Sigma referenced to 2000m'
@@ -233,19 +238,53 @@ else:
   tmpne=tmpn.roll(nlon=-1,roll_coords=False)      # wraparound shift to west, without changing coords
   tmpall=xr.concat([tmp,tmpe,tmpn,tmpne],dim='dummy')
   sigma2=tmpall.mean('dummy')
-  sigma2.attrs=tmp.attrs                          # sigma2 now on U-grid
+  sigma2.attrs=tmp.attrs                          # sigma2 now on ULONG,ULAT
   del tmp,tmpe,tmpn,tmpne,tmpall
-
-  # apply U-grid mask & remove density inversions
+  # apply U-grid mask
   mask=kindices>kmu.values[None,:,:]
   sigma2.values[mask[None,:,:,:]]=np.nan
+
+  sigma2_UT = xr.DataArray(sigma2,name='Sigma2',dims=pd.dims,coords=u_i.coords)
+  sigma2_UT.attrs=pd.attrs
+  sigma2_UT.attrs['long_name']='Sigma referenced to 2000m'
+  sigma2_UT.attrs['units']='kg/m^3'
+  tmp=sigma2_UT
+  tmps=tmp.shift(nlat=1)		         # shift to north, without changing coords
+  tmpall=xr.concat([tmp,tmps],dim='dummy')
+  sigma2_UT=tmpall.mean('dummy')
+  sigma2_UT.attrs=tmp.attrs                      # sigma2_UT now on ULONG,TLAT
+  del tmp,tmps,tmpall
+
+  sigma2_TU = xr.DataArray(sigma2,name='Sigma2',dims=pd.dims,coords=v_i.coords)
+  sigma2_TU.attrs=pd.attrs
+  sigma2_TU.attrs['long_name']='Sigma referenced to 2000m'
+  sigma2_TU.attrs['units']='kg/m^3'
+  tmp=sigma2_TU
+  tmpw=tmp.roll(nlon=1,roll_coords=False)        # shift to east, without changing coords
+  tmpall=xr.concat([tmp,tmpw],dim='dummy')
+  sigma2_TU=tmpall.mean('dummy')
+  sigma2_TU.attrs=tmp.attrs                      # sigma2_TU now on TLONG,ULAT
+  del tmp,tmpw,tmpall
+
+  # remove density inversions
   for iz in range(km-1,0,-1):
-     print(iz)
      tmp1 = sigma2[:,iz,:,:].values
      tmp2 = sigma2[:,iz-1,:,:].values
      tmp3 = (~np.isnan(tmp1)) & (~np.isnan(tmp2)) & np.greater(tmp2,tmp1) 
      tmp2[tmp3] = tmp1[tmp3]-1.e-5
      sigma2.values[:,iz-1,:,:] = tmp2
+     tmp1 = sigma2_UT[:,iz,:,:].values
+     tmp2 = sigma2_UT[:,iz-1,:,:].values
+     tmp3 = (~np.isnan(tmp1)) & (~np.isnan(tmp2)) & np.greater(tmp2,tmp1) 
+     tmp2[tmp3] = tmp1[tmp3]-1.e-5
+     sigma2_UT.values[:,iz-1,:,:] = tmp2
+     tmp1 = sigma2_TU[:,iz,:,:].values
+     tmp2 = sigma2_TU[:,iz-1,:,:].values
+     tmp3 = (~np.isnan(tmp1)) & (~np.isnan(tmp2)) & np.greater(tmp2,tmp1) 
+     tmp2[tmp3] = tmp1[tmp3]-1.e-5
+     sigma2_TU.values[:,iz-1,:,:] = tmp2
+  time4=timer.time()
+  print('Timing:  Sigma remapping & correcting inversions =  ',time4-time3,'s')
 
   # debug test: read in sigma2 from NCL code:
   #tmpds = xr.open_dataset('/glade/scratch/yeager/g.DPLE.GECOIAF.T62_g16.009.chey/g.DPLE.GECOIAF.T62_g16.009.chey.pop.h.0301-01.MOCsig2.debug.nc')
@@ -254,17 +293,26 @@ else:
 
   # Find sigma2 layer interface depths on U-grid
   sigma2.values[np.isnan(sigma2.values)]=mval
-  tmpsig=np.transpose(sigma2.values,axes=[3,2,1,0])
+  sigma2_UT.values[np.isnan(sigma2_UT.values)]=mval
+  sigma2_TU.values[np.isnan(sigma2_TU.values)]=mval
   tmpkmu=np.transpose(kmu.values,axes=[1,0])
-  target_z_top,target_z_bot = moc_offline_1deg.sig2z(tmpsig,tmpkmu,z_t.values,z_bot,sig2_top,sig2_bot,mval,[nt,nz,ny,nx,nsig])
+  tmpkmt=np.transpose(kmt.values,axes=[1,0])
+  tmpsig=np.transpose(sigma2.values,axes=[3,2,1,0])
+  targ_ztop,targ_zbot = moc_offline_1deg.sig2z(tmpsig,tmpkmu,z_t.values,z_bot,sig2_top,sig2_bot,mval,[nt,nz,ny,nx,nsig])
+  tmpsig=np.transpose(sigma2_UT.values,axes=[3,2,1,0])
+  targ_ztop_ut,targ_zbot_ut = moc_offline_1deg.sig2z(tmpsig,tmpkmt,z_t.values,z_bot,sig2_top,sig2_bot,mval,[nt,nz,ny,nx,nsig])
+  tmpsig=np.transpose(sigma2_TU.values,axes=[3,2,1,0])
+  targ_ztop_tu,targ_zbot_tu = moc_offline_1deg.sig2z(tmpsig,tmpkmt,z_t.values,z_bot,sig2_top,sig2_bot,mval,[nt,nz,ny,nx,nsig])
   del tmpsig,tmpkmu
+  time5=timer.time()
+  print('Timing:  sig2z call =  ',time5-time4,'s')
 
   # Calculate horizontal & vertical volume fluxes:
   tmpkmt=np.transpose(kmt.values,axes=[1,0])
 
   tmpu=np.transpose(ueflux_z.values.copy(),axes=[3,2,1,0])
   tmpv=np.transpose(veflux_z.values.copy(),axes=[3,2,1,0])
-  utmp,vtmp,wtmp = moc_offline_1deg.fluxconv(tmpkmt,z_top,z_bot,dz.values,target_z_top,target_z_bot,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
+  utmp,vtmp,wtmp = moc_offline_1deg.fluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop,targ_zbot,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
   ueflux_sig=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
         coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
         name='uedydz_sig',attrs={'units':'m^3/s'})
@@ -277,7 +325,7 @@ else:
 
   tmpu=np.transpose(uiflux_z.values.copy(),axes=[3,2,1,0])
   tmpv=np.transpose(viflux_z.values.copy(),axes=[3,2,1,0])
-  utmp,vtmp,wtmp = moc_offline_1deg.fluxconv(tmpkmt,z_top,z_bot,dz.values,target_z_top,target_z_bot,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
+  utmp,vtmp,wtmp = moc_offline_1deg.sgsfluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop_ut,targ_ztop_tu,targ_zbot_ut,targ_zbot_tu,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
   uiflux_sig=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
         coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
         name='uidydz_sig',attrs={'units':'m^3/s'})
@@ -290,7 +338,7 @@ else:
 
   tmpu=np.transpose(usflux_z.values.copy(),axes=[3,2,1,0])
   tmpv=np.transpose(vsflux_z.values.copy(),axes=[3,2,1,0])
-  utmp,vtmp,wtmp = moc_offline_1deg.fluxconv(tmpkmt,z_top,z_bot,dz.values,target_z_top,target_z_bot,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
+  utmp,vtmp,wtmp = moc_offline_1deg.sgsfluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop_ut,targ_ztop_tu,targ_zbot_ut,targ_zbot_tu,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
   usflux_sig=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
         coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
         name='usdydz_sig',attrs={'units':'m^3/s'})
@@ -310,13 +358,15 @@ else:
   usflux=usflux_sig.copy()
   vsflux=vsflux_sig.copy()
   wsflux=wsflux_sig.copy()
+  time6=timer.time()
+  print('Timing:  fluxconv call =  ',time6-time5,'s')
 
   if debug:
      # DEBUG: write sigma2 interface layer depth info to netcdf
-     tmparr1=xr.DataArray(np.transpose(target_z_top,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
+     tmparr1=xr.DataArray(np.transpose(targ_ztop,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
        coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
        name='SIG_top')
-     tmparr2=xr.DataArray(np.transpose(target_z_bot,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
+     tmparr2=xr.DataArray(np.transpose(targ_zbot,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
        coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
        name='SIG_bot')
      tmparr3=tmparr2-tmparr1
@@ -342,13 +392,16 @@ else:
      debug_ds['veflux_zint_fromz']=veflux_zint
      debug_ds['weflux_srf_fromsigma']=weflux_sig[:,0,:,:]
      debug_ds['weflux_srf_fromz']=weflux_z[:,0,:,:]
-     debug_ds['uedydz_z']=ueflux_z
-     debug_ds['vedxdz_z']=veflux_z
+     debug_ds['uedydz_sig']=ueflux_sig.copy()
+     debug_ds['vedxdz_sig']=veflux_sig.copy()
      debug_ds['weflux_sig']=weflux_sig.copy()
      debug_ds.to_netcdf(out_file_db)
+     time7=timer.time()
+     print('Timing:  debug stuff =  ',time7-time6,'s')
 
 # Compute MOC
 #   a. integrate wflux in zonal direction (zonal sum of wflux already in m^3/s)
+time8=timer.time()
 rmlak = np.zeros((nx,ny,2),dtype=np.int)
 tmprmask = np.transpose(rmask.values,axes=[1,0])
 tmptlat = np.transpose(tlat.values,axes=[1,0])
@@ -364,6 +417,8 @@ tmpw = np.transpose(np.where(~np.isnan(wsflux.values.copy()),wsflux.values.copy(
 tmpmoc_s = moc_offline_1deg.wzonalsum(tmptlat,lat_aux_grid,rmlak,tmpw,mval,[nyaux,nx,ny,nz,nt,ntr])
 tmpmoc_s=np.single(np.append(tmpmoc_s,np.zeros((nyaux,1,ntr,nt)),axis=1))	# add ocean bottom
 #print('tmpmoc shape',np.shape(tmpmoc))
+time9=timer.time()
+print('Timing:  wzonalsum call =  ',time9-time8,'s')
 
 #   b. integrate in meridional direction
 if zcoord:
@@ -382,6 +437,8 @@ MOCnew = MOCnew.where(MOCnew<mval).cumsum(dim='lat_aux_grid')
 MOCnew = MOCnew*1.0e-6
 MOCnew.attrs={'units':'Sverdrups','long_name':'Meridional Overturning Circulation'}
 MOCnew.encoding['_FillValue']=mval
+time10=timer.time()
+print('Timing:  meridional integration =  ',time10-time9,'s')
 
 # Add MOC boundary condition at Atlantic southern boundary
 #    a. find starting j-index for Atlantic region
@@ -391,15 +448,18 @@ for n in range(1,ny):
     if (section.any()): 
        lat_aux_atl_start = n-2
        break
-# print("lat_aux_atl_start= ",lat_aux_atl_start)
+print("lat_aux_atl_start= ",lat_aux_atl_start)
 
 #    b. regrid VDXDZ from ULONG,ULAT to TLONG,ULAT grid
-tmp=veflux
-tmpw=tmp.roll(nlon=1,roll_coords=False)        
-tmpall=xr.concat([tmp,tmpw],dim='dummy')
-veflux=tmpall.where(tmpall<1e30).mean('dummy')
-del tmp,tmpw,tmpall
+#tmp=veflux
+#tmpw=tmp.roll(nlon=1,roll_coords=False)        
+#tmpall=xr.concat([tmp,tmpw],dim='dummy')
+#veflux=tmpall.where(tmpall<1e30).mean('dummy')
+#del tmp,tmpw,tmpall
 #    c. zonal integral of Atlantic points
+veflux = veflux.where(veflux<1e30)
+vsflux = vsflux.where(vsflux<1e30)
+viflux = viflux.where(viflux<1e30)
 atlmask=xr.DataArray(np.where(rmask==6,1,0),dims=['nlat','nlon'])
 atlmask=atlmask.roll(nlat=-1,roll_coords=False)
 veflux_xint=veflux.where(atlmask==1).sum(dim='nlon')
@@ -419,7 +479,8 @@ amoc_s_s = amoc_s_s[::-1]*1.e-6
 MOCnew.values[:,1,0,0:mocnz-1,:] = MOCnew.values[:,1,0,0:mocnz-1,:] + amoc_s_e.values[None,:,None]
 MOCnew.values[:,1,1,0:mocnz-1,:] = MOCnew.values[:,1,1,0:mocnz-1,:] + amoc_s_i.values[None,:,None]
 MOCnew.values[:,1,2,0:mocnz-1,:] = MOCnew.values[:,1,2,0:mocnz-1,:] + amoc_s_s.values[None,:,None]
-
+time11=timer.time()
+print('Timing:  Atl southern boundary stuff =  ',time11-time10,'s')
 
 #8.    Write output to netcdf
 #MOCnew.encoding=moc.encoding
@@ -430,6 +491,8 @@ if zcoord and debug:
    out_ds['MOCdiff']=MOCdiff
 #out_ds.to_netcdf(out_file,encoding={'MOC':{'_FillValue':mval}})
 out_ds.to_netcdf(out_file)
+time12=timer.time()
+print('Timing:  writing output =  ',time12-time11,'s')
 
-time2=timer.time()
-print('DONE creating ',out_file,':  ',time2-time1,'s')
+time13=timer.time()
+print('DONE creating ',out_file,'. Total time = ',time13-time1,'s')

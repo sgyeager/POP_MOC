@@ -243,27 +243,27 @@ end subroutine fluxconv
 !*******************************************************************
 
 !*******************************************************************
-subroutine sig2sgsfluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz &
-            ,zsigtopu,zsigtopv,zsigbotu,zsigbotv,worku,workv &
-            ,uout,vout,wout,mval2)
+subroutine sgsfluxconv(nt,nz,ny,nx,targnz,kmt,ztop,zbot,dz &
+            ,targztopu,targztopv,targzbotu,targzbotv,worku,workv &
+            ,uout,vout,wout,mval)
       implicit none
-      integer, intent(in) :: nt,nz,ny,nx,nsig, kmt(nx,ny)
+      integer, intent(in) :: nt,nz,ny,nx,targnz, kmt(nx,ny)
       real, intent(in) :: ztop(nz), zbot(nz), dz(nz)
-      real, intent(in) :: zsigtopu(nx,ny,nsig,nt),zsigtopv(nx,ny,nsig,nt)
-      real, intent(in) :: zsigbotu(nx,ny,nsig,nt),zsigbotv(nx,ny,nsig,nt)
-      real*8, intent(in) :: worku(nx,ny,nz,nt), workv(nx,ny,nz,nt),mval2
-      real*8, intent(out) :: wout(nx,ny,nsig,nt), vout(nx,ny,nsig,nt)
-      real*8, intent(out) ::  uout(nx,ny,nsig,nt)
-      integer :: it,isig,iz,iy,ix,ij,ixx(2),iyy(2)
-      real*8 ::  wgtu(nsig),wgtv(nsig)
+      real, intent(in) :: targztopu(nx,ny,targnz,nt),targztopv(nx,ny,targnz,nt)
+      real, intent(in) :: targzbotu(nx,ny,targnz,nt),targzbotv(nx,ny,targnz,nt)
+      real*8, intent(in) :: worku(nx,ny,nz,nt), workv(nx,ny,nz,nt),mval
+      real*8, intent(out) :: wout(nx,ny,targnz,nt), vout(nx,ny,targnz,nt)
+      real*8, intent(out) ::  uout(nx,ny,targnz,nt)
+      integer :: it,iz2,iz,iy,ix,ij,ixx(2),iyy(2)
+      real*8 ::  wgtu(targnz),wgtv(targnz)
       real*8 ::  zbsigu,ztsigu,zbsigv,ztsigv,zb,zt
       real*8 ::  dzsig, sumwgtu, sumwgtv, udydz,vdxdz
       real*8 ::  fueW,fueE,fvnN,fvnS
-      real*8 ::  tmpusig(2,nsig),tmpvsig(2,nsig)
+      real*8 ::  tmpu(2,targnz),tmpv(2,targnz)
 
-      uout = mval2
-      vout = mval2
-      wout = mval2
+      uout = mval
+      vout = mval
+      wout = mval
 
       do iy=2,ny
       do ix=1,nx
@@ -287,8 +287,8 @@ subroutine sig2sgsfluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz &
 
           do it=1,nt
            do ij=1,2
-             tmpusig(ij,:) = mval2
-             tmpvsig(ij,:) = mval2
+             tmpu(ij,:) = mval
+             tmpv(ij,:) = mval
             do iz=1,nz
              zb = zbot(iz)
              zt = ztop(iz)
@@ -299,13 +299,13 @@ subroutine sig2sgsfluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz &
                 udydz = 0.
                 vdxdz = 0.
              end if
-             do isig=1,nsig
-              zbsigu = zsigbotu(ixx(ij),iyy(1),isig,it)
-              ztsigu = zsigtopu(ixx(ij),iyy(1),isig,it)
-              zbsigv = zsigbotv(ixx(1),iyy(ij),isig,it)
-              ztsigv = zsigtopv(ixx(1),iyy(ij),isig,it)
-              wgtu(isig) = 0.0
-              wgtv(isig) = 0.0
+             do iz2=1,targnz
+              zbsigu = targzbotu(ixx(ij),iyy(1),iz2,it)
+              ztsigu = targztopu(ixx(ij),iyy(1),iz2,it)
+              zbsigv = targzbotv(ixx(1),iyy(ij),iz2,it)
+              ztsigv = targztopv(ixx(1),iyy(ij),iz2,it)
+              wgtu(iz2) = 0.0
+              wgtv(iz2) = 0.0
 
               if (zbsigu.lt.1.e15) then
                dzsig = zbsigu-ztsigu
@@ -315,19 +315,19 @@ subroutine sig2sgsfluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz &
 ! total horizontal flux for this z-level!
 !  if this z-layer falls entirely within the isopycnal layer:
                if (zb.le.zbsigu.and.zt.ge.ztsigu) then
-                wgtu(isig) = 1.0
+                wgtu(iz2) = 1.0
                end if
 !  if only bottom of z-cell is within isopycnal layer:
                if (zb.ge.ztsigu.and.zt.lt.ztsigu) then
-                wgtu(isig) = (zb-ztsigu)/dz(iz)
+                wgtu(iz2) = (zb-ztsigu)/dz(iz)
                end if
 !  if only top of z-cell is within isopycnal layer:
                if (zt.le.zbsigu.and.zb.gt.zbsigu) then
-                wgtu(isig) = (zbsigu-zt)/dz(iz)
+                wgtu(iz2) = (zbsigu-zt)/dz(iz)
                end if
 !  if the isopycnal layer falls entirely within the z-layer:
                if (zt.lt.ztsigu.and.zb.gt.zbsigu) then
-                wgtu(isig) = dzsig/dz(iz)
+                wgtu(iz2) = dzsig/dz(iz)
                end if
               end if
 
@@ -339,47 +339,47 @@ subroutine sig2sgsfluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz &
 ! total horizontal flux for this z-level!
 !  if this z-layer falls entirely within the isopycnal layer:
                if (zb.le.zbsigv.and.zt.ge.ztsigv) then
-                wgtv(isig) = 1.0
+                wgtv(iz2) = 1.0
                end if
 !  if only bottom of z-cell is within isopycnal layer:
                if (zb.ge.ztsigv.and.zt.lt.ztsigv) then
-                wgtv(isig) = (zb-ztsigv)/dz(iz)
+                wgtv(iz2) = (zb-ztsigv)/dz(iz)
                end if
 !  if only top of z-cell is within isopycnal layer:
                if (zt.le.zbsigv.and.zb.gt.zbsigv) then
-                wgtv(isig) = (zbsigv-zt)/dz(iz)
+                wgtv(iz2) = (zbsigv-zt)/dz(iz)
                end if
 !  if the isopycnal layer falls entirely within the z-layer:
                if (zt.lt.ztsigv.and.zb.gt.zbsigv) then
-                wgtv(isig) = dzsig/dz(iz)
+                wgtv(iz2) = dzsig/dz(iz)
                end if
               end if
 
              end do
 
-! Use normalized wgt() array to compute tmpusig, tmpvsig
+! Use normalized wgt() array to compute tmpu, tmpv
              sumwgtu = sum(wgtu)
              sumwgtv = sum(wgtv)
              if (sumwgtu.ne.0.0) then
-               do isig=1,nsig
-                if (wgtu(isig).ne.0.) then
-                 wgtu(isig) = wgtu(isig)/sumwgtu
-                 if (tmpusig(ij,isig).eq.mval2) then
-                  tmpusig(ij,isig)= wgtu(isig)*udydz
+               do iz2=1,targnz
+                if (wgtu(iz2).ne.0.) then
+                 wgtu(iz2) = wgtu(iz2)/sumwgtu
+                 if (tmpu(ij,iz2).eq.mval) then
+                  tmpu(ij,iz2)= wgtu(iz2)*udydz
                  else
-                  tmpusig(ij,isig)=tmpusig(ij,isig)+wgtu(isig)*udydz
+                  tmpu(ij,iz2)=tmpu(ij,iz2)+wgtu(iz2)*udydz
                  end if
                 end if
                end do
              end if
              if (sumwgtv.ne.0.0) then
-               do isig=1,nsig
-                if (wgtv(isig).ne.0.) then
-                 wgtv(isig) = wgtv(isig)/sumwgtv
-                 if (tmpvsig(ij,isig).eq.mval2) then
-                  tmpvsig(ij,isig)= wgtv(isig)*vdxdz
+               do iz2=1,targnz
+                if (wgtv(iz2).ne.0.) then
+                 wgtv(iz2) = wgtv(iz2)/sumwgtv
+                 if (tmpv(ij,iz2).eq.mval) then
+                  tmpv(ij,iz2)= wgtv(iz2)*vdxdz
                  else
-                  tmpvsig(ij,isig)=tmpvsig(ij,isig)+wgtv(isig)*vdxdz
+                  tmpv(ij,iz2)=tmpv(ij,iz2)+wgtv(iz2)*vdxdz
                  end if
                 end if
                end do
@@ -387,22 +387,22 @@ subroutine sig2sgsfluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz &
             end do
            end do
 !  This ends the loops over all z and all relevant U,V points.
-!  Now, tmpusig, tmpvsig are defined, so compute
+!  Now, tmpu, tmpv are defined, so compute
 !  convergence and fill vout and wout:
-          do isig=1,nsig
-           uout(ix,iy,isig,it) = tmpusig(1,isig)
-           vout(ix,iy,isig,it) = tmpvsig(1,isig)
-           if (all(tmpvsig(:,isig).eq.mval2).and. &
-               all(tmpusig(:,isig).eq.mval2)) then
-            wout(ix,iy,isig,it) = mval2
+          do iz2=1,targnz
+           uout(ix,iy,iz2,it) = tmpu(1,iz2)
+           vout(ix,iy,iz2,it) = tmpv(1,iz2)
+           if (all(tmpv(:,iz2).eq.mval).and. &
+               all(tmpu(:,iz2).eq.mval)) then
+            wout(ix,iy,iz2,it) = mval
            else
-            where(tmpusig(:,isig).eq.mval2) tmpusig(:,isig)=0.
-            where(tmpvsig(:,isig).eq.mval2) tmpvsig(:,isig)=0.
-            fueE = tmpusig(1,isig)
-            fueW = tmpusig(2,isig)
-            fvnN = tmpvsig(1,isig)
-            fvnS = tmpvsig(2,isig)
-            wout(ix,iy,isig,it) = -(fueE-fueW+fvnN-fvnS)
+            where(tmpu(:,iz2).eq.mval) tmpu(:,iz2)=0.
+            where(tmpv(:,iz2).eq.mval) tmpv(:,iz2)=0.
+            fueE = tmpu(1,iz2)
+            fueW = tmpu(2,iz2)
+            fvnN = tmpv(1,iz2)
+            fvnS = tmpv(2,iz2)
+            wout(ix,iy,iz2,it) = -(fueE-fueW+fvnN-fvnS)
            end if
           end do
 
@@ -411,7 +411,7 @@ subroutine sig2sgsfluxconv(nt,nz,ny,nx,nsig,kmt,ztop,zbot,dz &
       end do
       end do
 
-end subroutine sig2sgsfluxconv
+end subroutine sgsfluxconv
 !*******************************************************************
 
 !*******************************************************************
