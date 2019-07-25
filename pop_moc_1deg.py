@@ -8,10 +8,10 @@ import pop_tools
 
 # Set Options
 time1=timer.time()
-zcoord=False		# True-->compute MOC(z), False-->compute MOC(sigma2)
+zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
 debug=True		# If zcoord=True, compute MOCdiff
                         # If zcoord=False, compute vertical sums
-computew=False		# Only applies for zcoord=True. True--> w will be computed from div(u,v)
+computew=True		# Only applies for zcoord=True. True--> w will be computed from div(u,v)
 
 # Define input/output streams
 in_dir='./tests/data/'
@@ -129,12 +129,10 @@ mval=pd.encoding['_FillValue']
 kji = np.indices((nz,ny,nx))
 kindices = kji[0,:,:,:] + 1
 
-# Zero out flow below bottom (overflow param):
-mask=kindices>kmu.values[None,:,:]
-u_e.values[mask[None,:,:,:]]=0.
-v_e.values[mask[None,:,:,:]]=0.
-mask=kindices>kmt.values[None,:,:]
-w_e.values[mask[None,:,:,:]]=0.
+# Zero out Eulerian velocity missing values
+u_e.values[np.isnan(u_e.values)]=0.0
+v_e.values[np.isnan(v_e.values)]=0.0
+w_e.values[np.isnan(w_e.values)]=0.0
 
 # grid-oriented volume fluxes 
 ueflux_z = u_e*dyu*dz	# m^3/s
@@ -166,6 +164,10 @@ if zcoord:
      targnz=nz
      targ_ztop = np.zeros((nx,ny,targnz,nt)) + z_top[None,None,:,None]
      targ_zbot = np.zeros((nx,ny,targnz,nt)) + z_bot[None,None,:,None]
+     targ_ztop_tu = targ_ztop
+     targ_zbot_tu = targ_zbot
+     targ_ztop_ut = targ_ztop
+     targ_zbot_ut = targ_zbot
      # Calculate horizontal & vertical volume fluxes:
      tmpkmt=np.transpose(kmt.values,axes=[1,0])
      tmpu=np.transpose(ueflux_z.values.copy(),axes=[3,2,1,0])
@@ -180,6 +182,32 @@ if zcoord:
      weflux=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','z_top','nlat','nlon'], \
            coords={'time':time,'z_top':z_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
            name='wedxdy',attrs={'units':'m^3/s'})
+
+     tmpu=np.transpose(uiflux_z.values.copy(),axes=[3,2,1,0])
+     tmpv=np.transpose(viflux_z.values.copy(),axes=[3,2,1,0])
+     utmp,vtmp,wtmp = moc_offline_1deg.sgsfluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop_ut,targ_ztop_tu,targ_zbot_ut,targ_zbot_tu,tmpu,tmpv,mval,[nt,nz,ny,nx,targnz])
+     uiflux=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
+           coords={'time':time,'z_t':z_t,'TLAT':(('nlat','nlon'),tlat),'ULONG':(('nlat','nlon'),ulon)}, \
+           name='uidydz',attrs={'units':'m^3/s'})
+     viflux=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
+           coords={'time':time,'z_t':z_t,'ULAT':(('nlat','nlon'),ulat),'TLONG':(('nlat','nlon'),tlon)}, \
+           name='vidxdz',attrs={'units':'m^3/s'})
+     wiflux=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','z_top','nlat','nlon'], \
+           coords={'time':time,'z_top':z_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+           name='widxdy',attrs={'units':'m^3/s'})
+
+     tmpu=np.transpose(usflux_z.values.copy(),axes=[3,2,1,0])
+     tmpv=np.transpose(vsflux_z.values.copy(),axes=[3,2,1,0])
+     utmp,vtmp,wtmp = moc_offline_1deg.sgsfluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop_ut,targ_ztop_tu,targ_zbot_ut,targ_zbot_tu,tmpu,tmpv,mval,[nt,nz,ny,nx,targnz])
+     usflux=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
+           coords={'time':time,'z_t':z_t,'TLAT':(('nlat','nlon'),tlat),'ULONG':(('nlat','nlon'),ulon)}, \
+           name='usdydz',attrs={'units':'m^3/s'})
+     vsflux=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
+           coords={'time':time,'z_t':z_t,'ULAT':(('nlat','nlon'),ulat),'TLONG':(('nlat','nlon'),tlon)}, \
+           name='vsdxdz',attrs={'units':'m^3/s'})
+     wsflux=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','z_top','nlat','nlon'], \
+           coords={'time':time,'z_top':z_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+           name='wsdxdy',attrs={'units':'m^3/s'})
   else:
      ueflux=ueflux_z
      veflux=veflux_z
@@ -383,18 +411,45 @@ else:
      debug_ds['SIG2']=sigma2
      # DEBUG: write vertically-integrated volume fluxes, from both z-coord & sigma-coord, to netcdf
      ueflux_sig_zint=ueflux_sig.where(ueflux_sig<1.e30).sum(dim='sigma')
-     veflux_sig_zint=veflux_sig.where(veflux_sig<1.e30).sum(dim='sigma')
      ueflux_zint=ueflux_z.where(ueflux_z<1.e30).sum(dim='z_t')
+     ueflux_err = (ueflux_sig_zint-ueflux_zint)/ueflux_zint
+     veflux_sig_zint=veflux_sig.where(veflux_sig<1.e30).sum(dim='sigma')
      veflux_zint=veflux_z.where(veflux_z<1.e30).sum(dim='z_t')
+     veflux_err = (veflux_sig_zint-veflux_zint)/veflux_zint
+     weflux_z=weflux_z.where(weflux_z!=0)
+     weflux_err = (weflux_sig[:,0,:,:]-weflux_z[:,0,:,:])/weflux_z[:,0,:,:]
      debug_ds['ueflux_zint_fromsigma']=ueflux_sig_zint
      debug_ds['ueflux_zint_fromz']=ueflux_zint
+     debug_ds['ueflux_err']=ueflux_err
      debug_ds['veflux_zint_fromsigma']=veflux_sig_zint
      debug_ds['veflux_zint_fromz']=veflux_zint
+     debug_ds['veflux_err']=veflux_err
      debug_ds['weflux_srf_fromsigma']=weflux_sig[:,0,:,:]
      debug_ds['weflux_srf_fromz']=weflux_z[:,0,:,:]
-     debug_ds['uedydz_sig']=ueflux_sig.copy()
-     debug_ds['vedxdz_sig']=veflux_sig.copy()
-     debug_ds['weflux_sig']=weflux_sig.copy()
+     debug_ds['weflux_err']=weflux_err
+     usflux_sig_zint=usflux_sig.where(usflux_sig<1.e30).sum(dim='sigma')
+     vsflux_sig_zint=vsflux_sig.where(vsflux_sig<1.e30).sum(dim='sigma')
+     usflux_zint=usflux_z.where(usflux_z<1.e30).sum(dim='z_t')
+     vsflux_zint=vsflux_z.where(vsflux_z<1.e30).sum(dim='z_t')
+     debug_ds['usflux_zint_fromsigma']=usflux_sig_zint
+     debug_ds['usflux_zint_fromz']=usflux_zint
+     debug_ds['vsflux_zint_fromsigma']=vsflux_sig_zint
+     debug_ds['vsflux_zint_fromz']=vsflux_zint
+     debug_ds['wsflux_srf_fromsigma']=wsflux_sig[:,0,:,:]
+     debug_ds['wsflux_srf_fromz']=wsflux_z[:,0,:,:]
+     uiflux_sig_zint=uiflux_sig.where(uiflux_sig<1.e30).sum(dim='sigma')
+     viflux_sig_zint=viflux_sig.where(viflux_sig<1.e30).sum(dim='sigma')
+     uiflux_zint=uiflux_z.where(uiflux_z<1.e30).sum(dim='z_t')
+     viflux_zint=viflux_z.where(viflux_z<1.e30).sum(dim='z_t')
+     debug_ds['uiflux_zint_fromsigma']=uiflux_sig_zint
+     debug_ds['uiflux_zint_fromz']=uiflux_zint
+     debug_ds['viflux_zint_fromsigma']=viflux_sig_zint
+     debug_ds['viflux_zint_fromz']=viflux_zint
+     debug_ds['wiflux_srf_fromsigma']=wiflux_sig[:,0,:,:]
+     debug_ds['wiflux_srf_fromz']=wiflux_z[:,0,:,:]
+#    debug_ds['uedydz_sig']=ueflux_sig.copy()
+#    debug_ds['vedxdz_sig']=veflux_sig.copy()
+#    debug_ds['weflux_sig']=weflux_sig.copy()
      debug_ds.to_netcdf(out_file_db)
      time7=timer.time()
      print('Timing:  debug stuff =  ',time7-time6,'s')

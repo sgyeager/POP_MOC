@@ -145,13 +145,13 @@ subroutine fluxconv(nt,nz,ny,nx,targnz,kmt,ztop,zbot,dz,targztop, &
             do iz=1,nz
              zb = zbot(iz)
              zt = ztop(iz)
-             if (iz.le.kmt(ix,iy)) then
+!            if (iz.le.kmt(ix,iy)) then
                 udydz = workuNE(ixx(ij),iyy(ij),iz,it)
                 vdxdz = workvNE(ixx(ij),iyy(ij),iz,it)
-             else
-                udydz = 0.
-                vdxdz = 0.
-             end if
+!            else
+!               udydz = 0.
+!               vdxdz = 0.
+!            end if
              do iz2=1,targnz
               zbsig = targzbot(ixx(ij),iyy(ij),iz2,it)
               ztsig = targztop(ixx(ij),iyy(ij),iz2,it)
@@ -261,10 +261,11 @@ subroutine sgsfluxconv(nt,nz,ny,nx,targnz,kmt,ztop,zbot,dz &
       real*8 ::  fueW,fueE,fvnN,fvnS
       real*8 ::  tmpu(2,targnz),tmpv(2,targnz)
 
-      uout = mval
-      vout = mval
-      wout = mval
+      uout = 0.
+      vout = 0.
+      wout = 0.
 
+      do it=1,nt
       do iy=2,ny
       do ix=1,nx
 !  skip land mask points
@@ -285,7 +286,6 @@ subroutine sgsfluxconv(nt,nz,ny,nx,targnz,kmt,ztop,zbot,dz &
           iyy(1) = iy
           iyy(2) = iy-1
 
-          do it=1,nt
            do ij=1,2
              tmpu(ij,:) = mval
              tmpv(ij,:) = mval
@@ -394,7 +394,7 @@ subroutine sgsfluxconv(nt,nz,ny,nx,targnz,kmt,ztop,zbot,dz &
            vout(ix,iy,iz2,it) = tmpv(1,iz2)
            if (all(tmpv(:,iz2).eq.mval).and. &
                all(tmpu(:,iz2).eq.mval)) then
-            wout(ix,iy,iz2,it) = mval
+            wout(ix,iy,iz2,it) = 0.0
            else
             where(tmpu(:,iz2).eq.mval) tmpu(:,iz2)=0.
             where(tmpv(:,iz2).eq.mval) tmpv(:,iz2)=0.
@@ -406,8 +406,14 @@ subroutine sgsfluxconv(nt,nz,ny,nx,targnz,kmt,ztop,zbot,dz &
            end if
           end do
 
+          !  vertical sum
+          do iz2=1,targnz-1
+            wout(ix,iy,targnz-iz2,it) = wout(ix,iy,targnz-iz2,it) + &
+                 wout(ix,iy,targnz-iz2+1,it)
           end do
+
         end if
+      end do
       end do
       end do
 
