@@ -4,29 +4,30 @@ import numpy as np                #numerics
 import os  	                  #operating system commands
 import time as timer
 import pop_tools
+import sys
 #import cftime                     #netcdf time
 
 # Set Options
 time1=timer.time()
 zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
-debug=True		# If zcoord=True, compute MOCdiff
+debug=False		# If zcoord=True, compute MOCdiff
                         # If zcoord=False, compute vertical sums
-computew=True		# Only applies for zcoord=True. True--> w will be computed from div(u,v)
+computew=False		# Only applies for zcoord=True. True--> w will be computed from div(u,v)
 
 # Define input/output streams
-in_dir='./tests/data/'
-out_dir='/glade/scratch/yeager/POP_MOC/'
-in_file = in_dir+'cesm_pop.h_g17.nc'
 moc_template_file = './moc_template.nc'
+nargs=len(sys.argv)
+in_file=sys.argv[1]
 if zcoord:
-  out_file = out_dir+'cesm_pop.h_g17.MOCz.python.nc'
-  if computew:
-    out_file = out_dir+'cesm_pop.h_g17.MOCz.python.computew.nc'
-  if debug:
-    moc_template_file = in_file
+   out_file=in_file[:-2]+'MOCz.nc'
+   if debug:
+     moc_template_file = in_file
 else:
-  out_file = out_dir+'cesm_pop.h_g17.MOCsig2.python.nc'
-  out_file_db = out_dir+'cesm_pop.h_g17.MOCsig2.python.debug.nc'
+   out_file=in_file[:-2]+'MOCsig.nc'
+if computew:
+   out_file=out_file[:-2]+'computew.nc'
+if debug:
+   out_file_db=out_file[:-2]+'debug.nc'
 
 # Import offline MOC routines written in fortran (compile with f2py if necessary)
 f90mocroutines='./MOCoffline.POP_1deg.f90'
@@ -545,7 +546,7 @@ if zcoord and debug:
    MOCdiff.values = MOCnew.values - moc.values
    out_ds['MOCdiff']=MOCdiff
 #out_ds.to_netcdf(out_file,encoding={'MOC':{'_FillValue':mval}})
-out_ds.to_netcdf(out_file)
+out_ds.to_netcdf(out_file,unlimited_dims='time')
 time12=timer.time()
 print('Timing:  writing output =  ',time12-time11,'s')
 
