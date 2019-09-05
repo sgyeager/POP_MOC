@@ -4,23 +4,33 @@ import numpy as np                #numerics
 import os  	                  #operating system commands
 import time as timer
 import pop_tools
+import sys
 #import cftime                     #netcdf time
 
 # Set Options
 time1=timer.time()
 zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
-debug=True		# Only applies for zcoord=False
+debug=False		# Only applies for zcoord=False
 computew=False          # Only applies for zcoord=True. True--> w will be computed from div(u,v)
 
 # Define input/output streams
 moc_template_file = './moc_template.nc'
-in_dir='/glade/p/cgd/oce/projects/JRA55/IAF/g.e20.G.TL319_t13.control.001/ocn/tavg/'
-out_dir='/glade/scratch/yeager/g.e20.G.TL319_t13.control.001/'
-in_file = in_dir+'g.e20.G.TL319_t13.control.001.pop.tavg.0042-0061.nc'
-#out_file = out_dir+'MOCsig2.0042-0061.python.test.nc'
-#out_file_db = out_dir+'MOCsig2.0042-0061.python.debug.nc'
-out_file = out_dir+'MOCz.0042-0061.python.nc'
-out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
+nargs=len(sys.argv)
+in_file=sys.argv[1]
+if zcoord:
+   out_file=in_file[:-2]+'MOCz.nc'
+else:
+   out_file=in_file[:-2]+'MOCsig.nc'
+if computew:
+   out_file=out_file[:-2]+'computew.nc'
+if debug:
+   out_file_db=out_file[:-2]+'debug.nc'
+
+#in_dir='/glade/scratch/yeager/iHesp/'
+#out_dir='/glade/scratch/yeager/iHesp/'
+#in_file = in_dir+'B.E.13.B1850C5.ne120_t12.sehires38.003.sunway_02.pop.h.0116-01.nc'
+#out_file = out_dir+'B.E.13.B1850C5.ne120_t12.sehires38.003.sunway_02.pop.h.0116-01.MOC.nc'
+#out_file_db = out_dir+'MOCz.0042-0061.python.debug.nc'
 
 # Regression test for MOC(z) computation:
 # in_dir='/glade/p/cgd/oce/projects/JRA55/IAF/g.e20.G.TL319_t13.control.001/ocn/tavg/'
@@ -374,7 +384,7 @@ print('Timing:  Atl southern boundary stuff =  ',time11-time10,'s')
 #8.    Write output to netcdf
 #MOCnew.encoding=moc.encoding
 out_ds=MOCnew.to_dataset(name='MOC')
-out_ds.to_netcdf(out_file)
+out_ds.to_netcdf(out_file,unlimited_dims='time')
 time12=timer.time()
 print('Timing:  writing output =  ',time12-time11,'s')
 
