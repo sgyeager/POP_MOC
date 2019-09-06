@@ -2,25 +2,41 @@ import xarray as xr               #netcdf multidim reading/writing/manipulation
 import glob                       #globbing
 import numpy as np                #numerics
 import os  	                  #operating system commands
+import subprocess
 import time as timer
 import pop_tools
 import sys
 #import cftime                     #netcdf time
 
-# Set Options
 time1=timer.time()
-zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
-debug=False		# Only applies for zcoord=False
-computew=False          # Only applies for zcoord=True. True--> w will be computed from div(u,v)
 
-# Define input/output streams
+# Set Default Options
+verbose_output=False	# True with "-v"
+append_to_infile=False	# True with "-a"
+sigmacoord=False	# True with "-s", otherwise compute MOC(z)
+debug=False		# True with "-d" (only applies for sigmacoord=True)
+computew=False          # True with "-w" (only applies for zcoord=True, w will be computed from div(u,v))
+
+# Define input/output settings & options based on command line input
 moc_template_file = './moc_template.nc'
 nargs=len(sys.argv)
-in_file=sys.argv[1]
-if zcoord:
-   out_file=in_file[:-2]+'MOCz.nc'
-else:
+in_file=sys.argv[-1]
+
+if ('-a' in sys.argv[:]):
+   append_to_infile=True
+if ('-v' in sys.argv[:]):
+   verbose_output=True
+if ('-s' in sys.argv[:]):
+   sigmacoord=True
+if ('-d' in sys.argv[:]):
+   debug=True
+if ('-w' in sys.argv[:]):
+   computew=True
+
+if sigmacoord:
    out_file=in_file[:-2]+'MOCsig.nc'
+else:
+   out_file=in_file[:-2]+'MOCz.nc'
 if computew:
    out_file=out_file[:-2]+'computew.nc'
 if debug:
@@ -39,15 +55,12 @@ if debug:
 # should reproduce vetted MOC(z) here (verified to within roundoff of Frank Bryan's fortran code):
 # out_file = '/glade/p/cgd/oce/projects/JRA55/IAF/g.e20.G.TL319_t13.control.001/ocn/tavg/MOCz.0042-0061.nc'
 
-# File containing POP 0.1deg partial bottom cell (pbc) information
-#  [Download from globus.org, endpoint "POP_MOC", or contact yeager@ucar.edu]
-POP0p1deg_pbc='./dzt_t13.nc'
-
 # Import offline MOC routines written in fortran (compile with f2py if necessary)
 f90mocroutines='./MOCoffline.POP_0p1deg.f90'
 if not os.path.isfile('moc_offline_0p1deg.cpython-37m-x86_64-linux-gnu.so'):  
    print('MOCoffline compiling')
-   os.system('f2py -c '+f90mocroutines+' -m moc_offline_0p1deg')
+   cmd = ['f2py','-c',f90mocroutines,'-m','moc_offline_0p1deg']
+   subprocess.call(cmd)
 else: print('moc_offline already compiled')
 import moc_offline_0p1deg
 
@@ -59,21 +72,6 @@ lat_aux_grid.encoding['_FillValue']=None
 transport_regions = ds['transport_regions'] 
 ntr = transport_regions.shape[0]
 nyaux = lat_aux_grid.shape[0]
-
-# Open a 0.1-deg POP grid file to get PBC information
-ds = xr.open_dataset(POP0p1deg_pbc)
-dzt = ds['DZT']/100
-dzt.attrs['units'] = 'm'
-
-# Regrid PBC thicknesses to U-grid
-tmp=dzt
-tmpe=tmp.roll(nlon=-1,roll_coords=False)        # wraparound shift to west, without changing coords
-tmpn=tmp.shift(nlat=-1)                         # shift to south, without changing coords
-tmpne=tmpn.roll(nlon=-1,roll_coords=False)      # wraparound shift to west, without changing coords
-tmpall=xr.concat([tmp,tmpe,tmpn,tmpne],dim='dummy')
-dzu=tmpall.min('dummy')
-dzu.attrs['units'] = 'm'
-del tmp,tmpe,tmpn,tmpne,tmpall
 
 # Open a POP history file requiring MOC
 ds = xr.open_dataset(in_file)
@@ -115,6 +113,8 @@ z_t   = ds['z_t']/100
 z_t.attrs['units']='m'
 z_w   = ds['z_w']/100
 z_w.attrs['units']='m'
+z_w_bot   = ds['z_w_bot']/100
+z_w_bot.attrs['units']='m'
 dz   = ds['dz']/100
 dz.attrs['units']='m'
 dzw   = ds['dzw']/100
@@ -135,14 +135,6 @@ mval=pd.encoding['_FillValue']
 kji = np.indices((nz,ny,nx))
 kindices = kji[0,:,:,:] + 1
 
-# grid-oriented volume fluxes 
-ueflux_z = u_e*dyu*dzu    # m^3/s
-ueflux_z = ueflux_z.drop(['TLAT','TLONG'])
-veflux_z = v_e*dxu*dzu    # m^3/s
-veflux_z = veflux_z.drop(['TLAT','TLONG'])
-weflux_z = w_e*tarea     # m^3/s
-weflux_z = weflux_z.drop(['ULAT','ULONG'])
-
 # Define top/bottom depths of POP T-grid
 z_bot=z_w.values
 z_bot=z_w.values+dz.values
@@ -151,9 +143,53 @@ z_top=z_w.values
 time2=timer.time()
 print('Timing:  Input data read =  ',time2-time1,'s')
 
-if zcoord:
+# File containing POP 0.1deg partial bottom cell (pbc) information
+#POP0p1deg_pbc='./dzt_t13.nc'
+#ds = xr.open_dataset(POP0p1deg_pbc)
+#dzt = ds['DZT']/100
+#dzt.attrs['units'] = 'm'
+# Compute PBC from grid info:
+dzt = np.zeros((nz,ny,nx)) + dz.values[:,None,None]
+for iz in range(0,nz):
+   bottom = kmt.values==(iz+1)
+   belowbottom = kmt.values<(iz+1)
+   count1 = np.count_nonzero(bottom)
+   count2 = np.count_nonzero(belowbottom)
+   if (count1 > 0):
+      tmp2 = dzt[iz,:,:]
+      tmp2[bottom] = ht.values[bottom] - z_w_bot.values[iz-1]
+      dzt[iz,:,:]=tmp2
+   if (count2 > 0):
+      tmp2 = dzt[iz,:,:]
+      tmp2[belowbottom] = mval
+      dzt[iz,:,:]=tmp2
+dzt = xr.DataArray(dzt,dims=['z_t','nlat','nlon'])
+dzt.encoding['_FillValue']=mval
+
+# Regrid PBC thicknesses to U-grid
+tmp=dzt
+tmpe=tmp.roll(nlon=-1,roll_coords=False)        # wraparound shift to west, without changing coords
+tmpn=tmp.shift(nlat=-1)                         # shift to south, without changing coords
+tmpne=tmpn.roll(nlon=-1,roll_coords=False)      # wraparound shift to west, without changing coords
+tmpall=xr.concat([tmp,tmpe,tmpn,tmpne],dim='dummy')
+dzu=tmpall.min('dummy')
+dzu.attrs['units'] = 'm'
+del tmp,tmpe,tmpn,tmpne,tmpall
+
+time2a=timer.time()
+print('Timing:  Computed partial bottom cells =  ',time2a-time2,'s')
+
+# grid-oriented volume fluxes 
+ueflux_z = u_e*dyu*dzu    # m^3/s
+ueflux_z = ueflux_z.drop(['TLAT','TLONG'])
+veflux_z = v_e*dxu*dzu    # m^3/s
+veflux_z = veflux_z.drop(['TLAT','TLONG'])
+weflux_z = w_e*tarea     # m^3/s
+weflux_z = weflux_z.drop(['ULAT','ULONG'])
+
+if not sigmacoord:
   # Define target vertical coordinates for MOC computation
-  #   zcoord:  use POP T-grid vertical coordinates
+  #   not sigmacoord:  use POP T-grid vertical coordinates
   mocz=xr.DataArray(np.append(z_top[0],z_bot),dims=['moc_z'],attrs={'long_name':'depth from surface to top of layer','units':'m','positive':'down'})
   mocz.encoding['_FillValue']=None
   mocnz=nz+1
@@ -184,7 +220,7 @@ if zcoord:
      weflux=weflux_z
 else:
   # Define target vertical coordinates for MOC computation
-  #    not zcoord:  define a set of well-chosen sigma2 levels 
+  #    sigmacoord:  define a set of well-chosen sigma2 levels 
   tmp1 = np.linspace(28,34.8,35)
   tmp2 = np.linspace(35,35.9,10)
   tmp3 = np.linspace(36,38.0,41)
@@ -201,7 +237,7 @@ else:
   mocz.encoding['_FillValue']=None
   mocnz=nsig+1
 
-  # Compute POP sigma2 field (NOTE: this is only necessary if zcoord=False)
+  # Compute POP sigma2 field (NOTE: this is only necessary if sigmacoord=True)
   # using pop_tools:
   depth=xr.DataArray(np.ones(np.shape(salt))*2000.,dims=salt.dims,coords=salt.coords)
   sigma2=pop_tools.eos(salt=salt,temp=temp,depth=depth)
@@ -217,7 +253,7 @@ else:
   #CT = gsw.CT_from_pt(SA,temp.values)
   #sigma2 = gsw.sigma2(SA,CT)
   time3=timer.time()
-  print('Timing:  EOS call =  ',time3-time2,'s')
+  print('Timing:  EOS call =  ',time3-time2a,'s')
 
   # convert to DataArray & regrid from T-grid to U-grid
   sigma2 = xr.DataArray(sigma2,name='Sigma2',dims=pd.dims,coords=pd.coords)
@@ -333,7 +369,7 @@ time9=timer.time()
 print('Timing:  wzonalsum call =  ',time9-time8,'s')
 
 #   b. integrate in meridional direction
-if zcoord:
+if not sigmacoord:
    MOCnew = xr.DataArray(np.zeros((nt,ntr,mocnz,nyaux),dtype=np.single),dims=['time','transport_reg','moc_z','lat_aux_grid'], \
       coords={'time':time,'transport_regions':transport_regions,'moc_z':mocz,'lat_aux_grid':lat_aux_grid}, \
       name='MOC')
@@ -342,7 +378,7 @@ else:
       coords={'time':time,'transport_regions':transport_regions,'sigma':mocz,'lat_aux_grid':lat_aux_grid}, \
       name='MOC')
 MOCnew.values[:,:,:,:] = np.transpose(tmpmoc_e,axes=[3,2,1,0])
-print('mocnewshape',np.shape(MOCnew))
+#print('mocnewshape',np.shape(MOCnew))
 MOCnew = MOCnew.where(MOCnew<mval).cumsum(dim='lat_aux_grid')
 MOCnew = MOCnew*1.0e-6
 MOCnew.attrs={'units':'Sverdrups','long_name':'Meridional Overturning Circulation'}
@@ -371,7 +407,7 @@ veflux = veflux.where(veflux<1e30)
 atlmask=xr.DataArray(np.where(rmask==6,1,0),dims=['nlat','nlon'])
 atlmask=atlmask.roll(nlat=-1,roll_coords=False)
 veflux_xint=veflux.where(atlmask==1).sum(dim='nlon')
-if zcoord:
+if not sigmacoord:
   amoc_s_e=-veflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='z_t')
 else:
   amoc_s_e=-veflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='sigma')
@@ -382,9 +418,13 @@ print('Timing:  Atl southern boundary stuff =  ',time11-time10,'s')
 
 
 #8.    Write output to netcdf
-#MOCnew.encoding=moc.encoding
 out_ds=MOCnew.to_dataset(name='MOC')
 out_ds.to_netcdf(out_file,unlimited_dims='time')
+if append_to_infile:
+   cmd = ['ncks','-A','-h','-v','MOC',out_file,in_file]
+   subprocess.call(cmd)
+   cmd = ['rm','-f',out_file]
+   subprocess.call(cmd)
 time12=timer.time()
 print('Timing:  writing output =  ',time12-time11,'s')
 
