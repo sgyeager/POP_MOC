@@ -15,7 +15,7 @@ verbose_output=False	# True with "-v"
 append_to_infile=False	# True with "-a"
 sigmacoord=False	# True with "-s", otherwise compute MOC(z)
 debug=False		# True with "-d" (only applies for sigmacoord=True)
-computew=False          # True with "-w" (only applies for zcoord=True, w will be computed from div(u,v))
+computew=False          # True with "-w" (only applies for sigmacoord=True, w will be computed from div(u,v))
 
 # Define input/output settings & options based on command line input
 moc_template_file = './moc_template.nc'
@@ -70,6 +70,8 @@ ds = xr.open_dataset(moc_template_file)
 lat_aux_grid = ds['lat_aux_grid'] 
 lat_aux_grid.encoding['_FillValue']=None  
 transport_regions = ds['transport_regions'] 
+moc_components = ds['moc_components'][:1]
+ncomp = moc_components.shape[0]
 ntr = transport_regions.shape[0]
 nyaux = lat_aux_grid.shape[0]
 
@@ -190,7 +192,7 @@ weflux_z = weflux_z.drop(['ULAT','ULONG'])
 if not sigmacoord:
   # Define target vertical coordinates for MOC computation
   #   not sigmacoord:  use POP T-grid vertical coordinates
-  mocz=xr.DataArray(np.append(z_top[0],z_bot),dims=['moc_z'],attrs={'long_name':'depth from surface to top of layer','units':'m','positive':'down'})
+  mocz=xr.DataArray(np.append(z_top[0],z_bot)*100.,dims=['moc_z'],attrs={'long_name':'depth from surface to top of layer','units':'cm','positive':'down'})
   mocz.encoding['_FillValue']=None
   mocnz=nz+1
   # Define vertical volume flux 
@@ -370,14 +372,14 @@ print('Timing:  wzonalsum call =  ',time9-time8,'s')
 
 #   b. integrate in meridional direction
 if not sigmacoord:
-   MOCnew = xr.DataArray(np.zeros((nt,ntr,mocnz,nyaux),dtype=np.single),dims=['time','transport_reg','moc_z','lat_aux_grid'], \
-      coords={'time':time,'transport_regions':transport_regions,'moc_z':mocz,'lat_aux_grid':lat_aux_grid}, \
+   MOCnew = xr.DataArray(np.zeros((nt,ntr,ncomp,mocnz,nyaux),dtype=np.single),dims=['time','transport_reg','moc_comp','moc_z','lat_aux_grid'], \
+      coords={'time':time,'transport_regions':transport_regions,'moc_components':moc_components,'moc_z':mocz,'lat_aux_grid':lat_aux_grid}, \
       name='MOC')
 else:
-   MOCnew = xr.DataArray(np.zeros((nt,ntr,mocnz,nyaux),dtype=np.single),dims=['time','transport_reg','sigma','lat_aux_grid'], \
-      coords={'time':time,'transport_regions':transport_regions,'sigma':mocz,'lat_aux_grid':lat_aux_grid}, \
+   MOCnew = xr.DataArray(np.zeros((nt,ntr,ncomp,mocnz,nyaux),dtype=np.single),dims=['time','transport_reg','moc_comp','sigma','lat_aux_grid'], \
+      coords={'time':time,'transport_regions':transport_regions,'moc_components':moc_components,'sigma':mocz,'lat_aux_grid':lat_aux_grid}, \
       name='MOC')
-MOCnew.values[:,:,:,:] = np.transpose(tmpmoc_e,axes=[3,2,1,0])
+MOCnew.values[:,:,0,:,:] = np.transpose(tmpmoc_e,axes=[3,2,1,0])
 #print('mocnewshape',np.shape(MOCnew))
 MOCnew = MOCnew.where(MOCnew<mval).cumsum(dim='lat_aux_grid')
 MOCnew = MOCnew*1.0e-6
@@ -412,7 +414,7 @@ if not sigmacoord:
 else:
   amoc_s_e=-veflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='sigma')
 amoc_s_e = amoc_s_e[::-1]*1.e-6
-MOCnew.values[:,1,0:mocnz-1,:] = MOCnew.values[:,1,0:mocnz-1,:] + amoc_s_e.values[None,:,None]
+MOCnew.values[:,1,0,0:mocnz-1,:] = MOCnew.values[:,1,0,0:mocnz-1,:] + amoc_s_e.values[None,:,None]
 time11=timer.time()
 print('Timing:  Atl southern boundary stuff =  ',time11-time10,'s')
 
@@ -421,7 +423,7 @@ print('Timing:  Atl southern boundary stuff =  ',time11-time10,'s')
 out_ds=MOCnew.to_dataset(name='MOC')
 out_ds.to_netcdf(out_file,unlimited_dims='time')
 if append_to_infile:
-   cmd = ['ncks','-A','-h','-v','MOC',out_file,in_file]
+   cmd = ['ncks','-A','-h','-v','MOC,transport_regions,moc_components',out_file,in_file]
    subprocess.call(cmd)
    cmd = ['rm','-f',out_file]
    subprocess.call(cmd)
