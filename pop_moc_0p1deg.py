@@ -273,7 +273,7 @@ else:
 
   # apply U-grid mask & remove density inversions
   mask=kindices>kmu.values[None,:,:]
-  sigma2.values[mask[None,:,:,:]]=np.nan
+  sigma2.values[np.broadcast_to(mask,sigma2.shape)]=np.nan
   for iz in range(km-1,0,-1):
      tmp1 = sigma2[:,iz,:,:].values
      tmp2 = sigma2[:,iz-1,:,:].values

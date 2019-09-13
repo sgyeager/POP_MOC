@@ -297,7 +297,7 @@ else:
   del tmp,tmpe,tmpn,tmpne,tmpall
   # apply U-grid mask
   mask=kindices>kmu.values[None,:,:]
-  sigma2.values[mask[None,:,:,:]]=np.nan
+  sigma2.values[np.broadcast_to(mask,sigma2.shape)]=np.nan
 
   sigma2_UT = xr.DataArray(sigma2,name='Sigma2',dims=pd.dims,coords=u_i.coords)
   sigma2_UT.attrs=pd.attrs
