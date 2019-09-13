@@ -2,28 +2,42 @@ import xarray as xr               #netcdf multidim reading/writing/manipulation
 import glob                       #globbing
 import numpy as np                #numerics
 import os  	                  #operating system commands
+import subprocess
 import time as timer
 import pop_tools
 import sys
 #import cftime                     #netcdf time
 
-# Set Options
 time1=timer.time()
-zcoord=True		# True-->compute MOC(z), False-->compute MOC(sigma2)
-debug=False		# If zcoord=True, compute MOCdiff
-                        # If zcoord=False, compute vertical sums
-computew=False		# Only applies for zcoord=True. True--> w will be computed from div(u,v)
+
+# Set Options
+verbose_output=False    # True with "-v"
+append_to_infile=False  # True with "-a"
+sigmacoord=False        # True with "-s", otherwise compute MOC(z)
+debug=False             # True with "-d" (only applies for sigmacoord=True)
+computew=False          # True with "-w" (only applies for sigmacoord=False, w will be computed from div(u,v))
 
 # Define input/output streams
 moc_template_file = './moc_template.nc'
 nargs=len(sys.argv)
-in_file=sys.argv[1]
-if zcoord:
-   out_file=in_file[:-2]+'MOCz.nc'
-   if debug:
-     moc_template_file = in_file
-else:
+in_file=sys.argv[-1]
+
+if ('-a' in sys.argv[:]):
+   append_to_infile=True
+if ('-v' in sys.argv[:]):
+   verbose_output=True
+   out_file2=in_file[:-2]+'MOCsig_fluxes.nc'
+if ('-s' in sys.argv[:]):
+   sigmacoord=True
+if ('-d' in sys.argv[:]):
+   debug=True
+if ('-w' in sys.argv[:]):
+   computew=True
+
+if sigmacoord:
    out_file=in_file[:-2]+'MOCsig.nc'
+else:
+   out_file=in_file[:-2]+'MOCz.nc'
 if computew:
    out_file=out_file[:-2]+'computew.nc'
 if debug:
@@ -49,6 +63,7 @@ moc_components = ds['moc_components']
 ncomp = moc_components.shape[0]
 ntr = transport_regions.shape[0]
 nyaux = lat_aux_grid.shape[0]
+del ds
 
 # Open a POP history file requiring MOC
 ds = xr.open_dataset(in_file)
@@ -86,9 +101,13 @@ w_s   = ds['WSUBM']/100
 w_s=w_s.drop(['ULAT','ULONG'])
 w_s.attrs['units']='m/s'
 ulat   = ds['ULAT']
+ulat=ulat.drop(['TLAT','TLONG'])            # this is a python bug that we are correcting
 ulon   = ds['ULONG']
+ulon=ulon.drop(['TLAT','TLONG'])            # this is a python bug that we are correcting
 tlat   = ds['TLAT']
+tlat=tlat.drop(['ULAT','ULONG'])            # this is a python bug that we are correcting
 tlon   = ds['TLONG']
+tlon=tlon.drop(['ULAT','ULONG'])            # this is a python bug that we are correcting
 kmt  = ds['KMT']
 kmu  = ds['KMU']
 dxu    = ds['DXU']/100
@@ -154,9 +173,9 @@ z_top=z_w.values
 time2=timer.time()
 print('Timing:  Input data read =  ',time2-time1,'s')
 
-if zcoord:
+if not sigmacoord:
   # Define target vertical coordinates for MOC computation
-  #   zcoord:  use POP T-grid vertical coordinates
+  #   not sigmacoord:  use POP T-grid vertical coordinates
   mocz=xr.DataArray(np.append(z_top[0],z_bot),dims=['moc_z'],attrs={'long_name':'depth from surface to top of layer','units':'m','positive':'down'})
   mocz.encoding['_FillValue']=None
   mocnz=nz+1
@@ -175,7 +194,7 @@ if zcoord:
      tmpv=np.transpose(veflux_z.values.copy(),axes=[3,2,1,0])
      utmp,vtmp,wtmp = moc_offline_1deg.fluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop,targ_zbot,tmpu,tmpv,mval,[nt,nz,ny,nx,targnz])
      ueflux=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
-           coords={'time':time,'z_t':z_t,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+           coords={'time':time,'z_t':z_t,'ULAT':ulat,'ULONG':ulon}, \
            name='uedydz',attrs={'units':'m^3/s'})
      veflux=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
            coords={'time':time,'z_t':z_t,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
@@ -221,7 +240,7 @@ if zcoord:
      wsflux=wsflux_z
 else:
   # Define target vertical coordinates for MOC computation
-  #    not zcoord:  define a set of well-chosen sigma2 levels 
+  #    sigmacoord:  define a set of well-chosen sigma2 levels 
   tmp1 = np.linspace(28,34.8,35)
   tmp2 = np.linspace(35,35.9,10)
   tmp3 = np.linspace(36,38.0,41)
@@ -234,11 +253,18 @@ else:
   sig2_bot = sig2.copy()
   sig2_bot[-1] = sig2[-1]+tmp[-1]
   sig2_bot[0:-1] = sig2[0:-1]+tmp
-  mocz=xr.DataArray(np.append(sig2_top[0],sig2_bot),dims=['sigma'],attrs={'long_name':'Sigma2 at top of layer','units':'kg/m^3'})
-  mocz.encoding['_FillValue']=None
+  # vertical coordinates in xarray:
+  sigma_moc=xr.DataArray(np.append(sig2_top[0],sig2_bot),dims=['moc_s'],attrs={'long_name':'Sigma2 at top of layer','units':'kg/m^3'})
+  sigma_moc.encoding['_FillValue']=None
   mocnz=nsig+1
+  sigma_top=xr.DataArray(sig2_top,dims=['sigma_top'],attrs={'long_name':'Sigma2 at top of layer','units':'kg/m^3'})
+  sigma_top.encoding['_FillValue']=None
+  sigma_mid=xr.DataArray(sig2,dims=['sigma'],attrs={'long_name':'Sigma2 at middle of layer','units':'kg/m^3'})
+  sigma_mid.encoding['_FillValue']=None
+  sigma_bot=xr.DataArray(sig2_bot,dims=['sigma_bot'],attrs={'long_name':'Sigma2 at bottom of layer','units':'kg/m^3'})
+  sigma_bot.encoding['_FillValue']=None
 
-  # Compute POP sigma2 field (NOTE: this is only necessary if zcoord=False)
+  # Compute POP sigma2 field (NOTE: this is only necessary if sigmacoord=True)
   # using pop_tools:
   depth=xr.DataArray(np.ones(np.shape(salt))*2000.,dims=salt.dims,coords=salt.coords)
   sigma2=pop_tools.eos(salt=salt,temp=temp,depth=depth)
@@ -336,47 +362,65 @@ else:
   time5=timer.time()
   print('Timing:  sig2z call =  ',time5-time4,'s')
 
+  # Calculate isopycnal layer thickness (U-grid)
+  ztop_sigma=xr.DataArray(np.transpose(targ_ztop,axes=[3,2,1,0]),dims=['time','sigma_top','nlat','nlon'], \
+     coords={'time':time,'sigma_top':sigma_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+     name='depth_sigma_top',attrs={'units':'m'})
+  ztop_sigma.encoding['_FillValue']=mval
+  zbot_sigma=xr.DataArray(np.transpose(targ_zbot,axes=[3,2,1,0]),dims=['time','sigma_bot','nlat','nlon'], \
+     coords={'time':time,'sigma_bot':sigma_bot,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+     name='depth_sigma_bot',attrs={'units':'m'})
+  zbot_sigma.encoding['_FillValue']=mval
+
   # Calculate horizontal & vertical volume fluxes:
   tmpkmt=np.transpose(kmt.values,axes=[1,0])
-
   tmpu=np.transpose(ueflux_z.values.copy(),axes=[3,2,1,0])
   tmpv=np.transpose(veflux_z.values.copy(),axes=[3,2,1,0])
   utmp,vtmp,wtmp = moc_offline_1deg.fluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop,targ_zbot,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
   ueflux_sig=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':ulat,'ULONG':ulon}, \
         name='uedydz_sig',attrs={'units':'m^3/s'})
+  ueflux_sig.encoding['_FillValue']=mval
   veflux_sig=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
         name='vedxdz_sig',attrs={'units':'m^3/s'})
+  veflux_sig.encoding['_FillValue']=mval
   weflux_sig=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma_top','nlat','nlon'], \
-        coords={'time':time,'sigma_top':sig2_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+        coords={'time':time,'sigma_top':sigma_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
         name='wedxdy_sig',attrs={'units':'m^3/s'})
+  weflux_sig.encoding['_FillValue']=mval
 
   tmpu=np.transpose(uiflux_z.values.copy(),axes=[3,2,1,0])
   tmpv=np.transpose(viflux_z.values.copy(),axes=[3,2,1,0])
   utmp,vtmp,wtmp = moc_offline_1deg.sgsfluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop_ut,targ_ztop_tu,targ_zbot_ut,targ_zbot_tu,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
   uiflux_sig=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
         name='uidydz_sig',attrs={'units':'m^3/s'})
+  uiflux_sig.encoding['_FillValue']=mval
   viflux_sig=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
         name='vidxdz_sig',attrs={'units':'m^3/s'})
+  viflux_sig.encoding['_FillValue']=mval
   wiflux_sig=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma_top','nlat','nlon'], \
-        coords={'time':time,'sigma_top':sig2_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+        coords={'time':time,'sigma_top':sigma_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
         name='widxdy_sig',attrs={'units':'m^3/s'})
+  wiflux_sig.encoding['_FillValue']=mval
 
   tmpu=np.transpose(usflux_z.values.copy(),axes=[3,2,1,0])
   tmpv=np.transpose(vsflux_z.values.copy(),axes=[3,2,1,0])
   utmp,vtmp,wtmp = moc_offline_1deg.sgsfluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop_ut,targ_ztop_tu,targ_zbot_ut,targ_zbot_tu,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
   usflux_sig=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
         name='usdydz_sig',attrs={'units':'m^3/s'})
+  usflux_sig.encoding['_FillValue']=mval
   vsflux_sig=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
         name='vsdxdz_sig',attrs={'units':'m^3/s'})
+  vsflux_sig.encoding['_FillValue']=mval
   wsflux_sig=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma_top','nlat','nlon'], \
-        coords={'time':time,'sigma_top':sig2_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+        coords={'time':time,'sigma_top':sigma_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
         name='wsdxdy_sig',attrs={'units':'m^3/s'})
+  wsflux_sig.encoding['_FillValue']=mval
 
   ueflux=ueflux_sig.copy()
   veflux=veflux_sig.copy()
@@ -477,13 +521,13 @@ time9=timer.time()
 print('Timing:  wzonalsum call =  ',time9-time8,'s')
 
 #   b. integrate in meridional direction
-if zcoord:
+if not sigmacoord:
    MOCnew = xr.DataArray(np.zeros((nt,ntr,ncomp,mocnz,nyaux),dtype=np.single),dims=['time','transport_reg','moc_comp','moc_z','lat_aux_grid'], \
       coords={'time':time,'transport_regions':transport_regions,'moc_comp':moc_components,'moc_z':mocz,'lat_aux_grid':lat_aux_grid}, \
       name='MOC')
 else:
-   MOCnew = xr.DataArray(np.zeros((nt,ntr,ncomp,mocnz,nyaux),dtype=np.single),dims=['time','transport_reg','moc_comp','sigma','lat_aux_grid'], \
-      coords={'time':time,'transport_regions':transport_regions,'moc_comp':moc_components,'sigma':mocz,'lat_aux_grid':lat_aux_grid}, \
+   MOCnew = xr.DataArray(np.zeros((nt,ntr,ncomp,mocnz,nyaux),dtype=np.single),dims=['time','transport_reg','moc_comp','moc_s','lat_aux_grid'], \
+      coords={'time':time,'transport_regions':transport_regions,'moc_comp':moc_components,'moc_s':sigma_moc,'lat_aux_grid':lat_aux_grid}, \
       name='MOC')
 MOCnew.values[:,:,0,:,:] = np.transpose(tmpmoc_e,axes=[3,2,1,0])
 MOCnew.values[:,:,1,:,:] = np.transpose(tmpmoc_i,axes=[3,2,1,0])
@@ -513,15 +557,15 @@ print("lat_aux_atl_start= ",lat_aux_atl_start)
 #veflux=tmpall.where(tmpall<1e30).mean('dummy')
 #del tmp,tmpw,tmpall
 #    c. zonal integral of Atlantic points
-veflux = veflux.where(veflux<1e30)
-vsflux = vsflux.where(vsflux<1e30)
-viflux = viflux.where(viflux<1e30)
+veflux_tmp = veflux.where(veflux<1e30)
+vsflux_tmp = vsflux.where(vsflux<1e30)
+viflux_tmp = viflux.where(viflux<1e30)
 atlmask=xr.DataArray(np.where(rmask==6,1,0),dims=['nlat','nlon'])
 atlmask=atlmask.roll(nlat=-1,roll_coords=False)
-veflux_xint=veflux.where(atlmask==1).sum(dim='nlon')
-viflux_xint=viflux.where(atlmask==1).sum(dim='nlon')
-vsflux_xint=vsflux.where(atlmask==1).sum(dim='nlon')
-if zcoord:
+veflux_xint=veflux_tmp.where(atlmask==1).sum(dim='nlon')
+viflux_xint=viflux_tmp.where(atlmask==1).sum(dim='nlon')
+vsflux_xint=vsflux_tmp.where(atlmask==1).sum(dim='nlon')
+if not sigmacoord:
   amoc_s_e=-veflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='z_t')
   amoc_s_i=-viflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='z_t')
   amoc_s_s=-vsflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='z_t')
@@ -540,13 +584,39 @@ print('Timing:  Atl southern boundary stuff =  ',time11-time10,'s')
 
 #8.    Write output to netcdf
 #MOCnew.encoding=moc.encoding
-out_ds=MOCnew.to_dataset(name='MOC')
-if zcoord and debug:
+if sigmacoord:
+   outvarstr='MOCsig'
+else:
+   outvarstr='MOC'
+out_ds=MOCnew.to_dataset(name=outvarstr)
+if not sigmacoord and debug:
    MOCdiff=MOCnew.copy()
    MOCdiff.values = MOCnew.values - moc.values
    out_ds['MOCdiff']=MOCdiff
+if sigmacoord and verbose_output:
+   out_ds['uedydz']=ueflux
+   out_ds['vedxdz']=veflux
+   print(out_ds['vedxdz'])
+   out_ds['wedxdy']=weflux
+   out_ds['uidydz']=uiflux
+   out_ds['vidxdz']=viflux
+   out_ds['widxdy']=wiflux
+   out_ds['usdydz']=usflux
+   out_ds['vsdxdz']=vsflux
+   out_ds['wsdxdy']=wsflux
+   out_ds['depth_sigma_top']=ztop_sigma
+   out_ds['depth_sigma_bot']=zbot_sigma
 #out_ds.to_netcdf(out_file,encoding={'MOC':{'_FillValue':mval}})
+   print(out_ds['vedxdz'])
+   out_ds['vedxdz']=out_ds['vedxdz'].drop(['TLAT','TLONG'])            # this is a python bug that we are correcting
 out_ds.to_netcdf(out_file,unlimited_dims='time')
+
+if append_to_infile:
+   cmd = ['ncks','-A','-h','-v',outvarstr,out_file,in_file]
+   subprocess.call(cmd)
+   cmd = ['rm','-f',out_file]
+   subprocess.call(cmd)
+
 time12=timer.time()
 print('Timing:  writing output =  ',time12-time11,'s')
 

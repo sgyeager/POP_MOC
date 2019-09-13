@@ -233,6 +233,13 @@ subroutine fluxconv(nt,nz,ny,nx,targnz,kmt,ztop,zbot,dz,targztop, &
             wout(ix,iy,targnz-iz2,it) = wout(ix,iy,targnz-iz2,it) + &
                  wout(ix,iy,targnz-iz2+1,it)
           end do
+          !  mask out where appropriate
+          do iz2=1,targnz-1
+            if (all(tmpv(:,iz2).eq.mval).and. &
+                all(tmpu(:,iz2).eq.mval)) then
+              wout(ix,iy,iz2,it) = mval
+            end if
+          end do
 
         end if
       end do
