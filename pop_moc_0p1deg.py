@@ -6,6 +6,7 @@ import subprocess
 import time as timer
 import pop_tools
 import sys
+import util
 #import cftime                     #netcdf time
 
 time1=timer.time()
@@ -145,28 +146,8 @@ z_top=z_w.values
 time2=timer.time()
 print('Timing:  Input data read =  ',time2-time1,'s')
 
-# File containing POP 0.1deg partial bottom cell (pbc) information
-#POP0p1deg_pbc='./dzt_t13.nc'
-#ds = xr.open_dataset(POP0p1deg_pbc)
-#dzt = ds['DZT']/100
-#dzt.attrs['units'] = 'm'
 # Compute PBC from grid info:
-dzt = np.zeros((nz,ny,nx)) + dz.values[:,None,None]
-for iz in range(0,nz):
-   bottom = kmt.values==(iz+1)
-   belowbottom = kmt.values<(iz+1)
-   count1 = np.count_nonzero(bottom)
-   count2 = np.count_nonzero(belowbottom)
-   if (count1 > 0):
-      tmp2 = dzt[iz,:,:]
-      tmp2[bottom] = ht.values[bottom] - z_w_bot.values[iz-1]
-      dzt[iz,:,:]=tmp2
-   if (count2 > 0):
-      tmp2 = dzt[iz,:,:]
-      tmp2[belowbottom] = mval
-      dzt[iz,:,:]=tmp2
-dzt = xr.DataArray(dzt,dims=['z_t','nlat','nlon'])
-dzt.encoding['_FillValue']=mval
+dzt = util.pbc_dzt(dz,kmt,ht,z_w_bot,mval)
 
 # Regrid PBC thicknesses to U-grid
 tmp=dzt
