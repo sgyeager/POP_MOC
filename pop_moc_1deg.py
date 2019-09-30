@@ -566,19 +566,19 @@ veflux_xint=veflux_tmp.where(atlmask==1).sum(dim='nlon')
 viflux_xint=viflux_tmp.where(atlmask==1).sum(dim='nlon')
 vsflux_xint=vsflux_tmp.where(atlmask==1).sum(dim='nlon')
 if not sigmacoord:
-  amoc_s_e=-veflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='z_t')
-  amoc_s_i=-viflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='z_t')
-  amoc_s_s=-vsflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='z_t')
+  amoc_s_e=-veflux_xint[:,::-1,lat_aux_atl_start].cumsum(dim='z_t')
+  amoc_s_i=-viflux_xint[:,::-1,lat_aux_atl_start].cumsum(dim='z_t')
+  amoc_s_s=-vsflux_xint[:,::-1,lat_aux_atl_start].cumsum(dim='z_t')
 else:
-  amoc_s_e=-veflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='sigma')
-  amoc_s_i=-viflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='sigma')
-  amoc_s_s=-vsflux_xint[0,::-1,lat_aux_atl_start].cumsum(dim='sigma')
-amoc_s_e = amoc_s_e[::-1]*1.e-6
-amoc_s_i = amoc_s_i[::-1]*1.e-6
-amoc_s_s = amoc_s_s[::-1]*1.e-6
-MOCnew.values[:,1,0,0:mocnz-1,:] = MOCnew.values[:,1,0,0:mocnz-1,:] + amoc_s_e.values[None,:,None]
-MOCnew.values[:,1,1,0:mocnz-1,:] = MOCnew.values[:,1,1,0:mocnz-1,:] + amoc_s_i.values[None,:,None]
-MOCnew.values[:,1,2,0:mocnz-1,:] = MOCnew.values[:,1,2,0:mocnz-1,:] + amoc_s_s.values[None,:,None]
+  amoc_s_e=-veflux_xint[:,::-1,lat_aux_atl_start].cumsum(dim='sigma')
+  amoc_s_i=-viflux_xint[:,::-1,lat_aux_atl_start].cumsum(dim='sigma')
+  amoc_s_s=-vsflux_xint[:,::-1,lat_aux_atl_start].cumsum(dim='sigma')
+amoc_s_e = amoc_s_e[:,::-1]*1.e-6
+amoc_s_i = amoc_s_i[:,::-1]*1.e-6
+amoc_s_s = amoc_s_s[:,::-1]*1.e-6
+MOCnew.values[:,1,0,0:mocnz-1,:] = MOCnew.values[:,1,0,0:mocnz-1,:] + amoc_s_e.values[:,:,None]
+MOCnew.values[:,1,1,0:mocnz-1,:] = MOCnew.values[:,1,1,0:mocnz-1,:] + amoc_s_i.values[:,:,None]
+MOCnew.values[:,1,2,0:mocnz-1,:] = MOCnew.values[:,1,2,0:mocnz-1,:] + amoc_s_s.values[:,:,None]
 time11=timer.time()
 print('Timing:  Atl southern boundary stuff =  ',time11-time10,'s')
 
