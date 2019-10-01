@@ -158,7 +158,6 @@ MHT[:,:,:,:] = np.nan
 MST[:,:,:,:] = np.nan
 
 # loop over lat_aux_grid
-lat_aux_atl_start = ny
 for n in range(1,nyaux):
     regionmask = (tlat.values < lat_aux_grid.values[n] ) & (reg_glo==1)
     if (np.any(regionmask)):
