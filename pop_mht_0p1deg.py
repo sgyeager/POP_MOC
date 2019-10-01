@@ -249,7 +249,7 @@ ds = MHT.to_dataset(name='N_HEAT')
 ds['N_SALT']=MST
 ds.to_netcdf(out_file)
 if append_to_infile:
-   cmd = ['ncks','-A','-h','-v','N_HEAT,N_SALT,transport_regions,transport_comp',out_file,in_file]
+   cmd = ['ncks','-A','-h','-v','N_HEAT,N_SALT,transport_regions,transport_components',out_file,in_file]
    subprocess.call(cmd)
    cmd = ['rm','-f',out_file]
    subprocess.call(cmd)
