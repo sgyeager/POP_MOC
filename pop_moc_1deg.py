@@ -371,6 +371,11 @@ else:
      coords={'time':time,'sigma_bot':sigma_bot,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
      name='depth_sigma_bot',attrs={'units':'m'})
   zbot_sigma.encoding['_FillValue']=mval
+  z_thk=xr.DataArray(np.zeros(np.shape(ztop_sigma)),dims=['time','sigma','nlat','nlon'], \
+      coords={'time':time,'sigma':sigma_mid,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+      name='sigma_dz',attrs={'units':'m'})
+  z_thk.encoding['_FillValue']=mval
+  z_thk.values=zbot_sigma.values-ztop_sigma.values
 
   # Calculate horizontal & vertical volume fluxes:
   tmpkmt=np.transpose(kmt.values,axes=[1,0])
@@ -606,6 +611,7 @@ if sigmacoord and verbose_output:
    out_ds['wsdxdy']=wsflux
    out_ds['depth_sigma_top']=ztop_sigma
    out_ds['depth_sigma_bot']=zbot_sigma
+   out_ds['sigma_dz']=z_thk
 #out_ds.to_netcdf(out_file,encoding={'MOC':{'_FillValue':mval}})
    print(out_ds['vedxdz'])
    out_ds['vedxdz']=out_ds['vedxdz'].drop(['TLAT','TLONG'])            # this is a python bug that we are correcting
