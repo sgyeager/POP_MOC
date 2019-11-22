@@ -216,9 +216,16 @@ else:
   sig2_bot = sig2.copy()
   sig2_bot[-1] = sig2[-1]+tmp[-1]
   sig2_bot[0:-1] = sig2[0:-1]+tmp
-  mocz=xr.DataArray(np.append(sig2_top[0],sig2_bot),dims=['sigma'],attrs={'long_name':'Sigma2 at top of layer','units':'kg/m^3'})
-  mocz.encoding['_FillValue']=None
+  # vertical coordinates in xarray:
+  sigma_moc=xr.DataArray(np.append(sig2_top[0],sig2_bot),dims=['moc_s'],attrs={'long_name':'Sigma2 at top of layer','units':'kg/m^3'})
+  sigma_moc.encoding['_FillValue']=None
   mocnz=nsig+1
+  sigma_top=xr.DataArray(sig2_top,dims=['sigma_top'],attrs={'long_name':'Sigma2 at top of layer','units':'kg/m^3'})
+  sigma_top.encoding['_FillValue']=None
+  sigma_mid=xr.DataArray(sig2,dims=['sigma'],attrs={'long_name':'Sigma2 at middle of layer','units':'kg/m^3'})
+  sigma_mid.encoding['_FillValue']=None
+  sigma_bot=xr.DataArray(sig2_bot,dims=['sigma_bot'],attrs={'long_name':'Sigma2 at bottom of layer','units':'kg/m^3'})
+  sigma_bot.encoding['_FillValue']=None
 
   # Compute POP sigma2 field (NOTE: this is only necessary if sigmacoord=True)
   # using pop_tools:
@@ -279,6 +286,21 @@ else:
   time5=timer.time()
   print('Timing:  sig2z call =  ',time5-time4,'s')
 
+  # Calculate isopycnal layer thickness (U-grid)
+  ztop_sigma=xr.DataArray(np.transpose(target_z_top,axes=[3,2,1,0]),dims=['time','sigma_top','nlat','nlon'], \
+     coords={'time':time,'sigma_top':sigma_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+     name='depth_sigma_top',attrs={'units':'m'})
+  ztop_sigma.encoding['_FillValue']=mval
+  zbot_sigma=xr.DataArray(np.transpose(target_z_bot,axes=[3,2,1,0]),dims=['time','sigma_bot','nlat','nlon'], \
+     coords={'time':time,'sigma_bot':sigma_bot,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+     name='depth_sigma_bot',attrs={'units':'m'})
+  zbot_sigma.encoding['_FillValue']=mval
+  z_thk=xr.DataArray(np.zeros(np.shape(ztop_sigma)),dims=['time','sigma','nlat','nlon'], \
+      coords={'time':time,'sigma':sigma_mid,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+      name='sigma_dz',attrs={'units':'m'})
+  z_thk.encoding['_FillValue']=mval
+  z_thk.values=zbot_sigma.values-ztop_sigma.values
+
   # Calculate horizontal & vertical volume fluxes:
   tmpdzu=np.transpose(dzu.values,axes=[2,1,0])
   tmpkmt=np.transpose(kmt.values,axes=[1,0])
@@ -287,13 +309,13 @@ else:
   tmpv=np.transpose(veflux_z.values.copy(),axes=[3,2,1,0])
   utmp,vtmp,wtmp = moc_offline_0p1deg.fluxconv(tmpkmt,tmpkmu,z_top,tmpdzu,target_z_top,target_z_bot,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
   ueflux_sig=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-     coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+     coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
      name='uedydz_sig',attrs={'units':'m^3/s'})
   veflux_sig=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-     coords={'time':time,'sigma':sig2,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+     coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
      name='vedxdz_sig',attrs={'units':'m^3/s'})
-  weflux_sig=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+  weflux_sig=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma_top','nlat','nlon'], \
+        coords={'time':time,'sigma_top':sigma_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
         name='wedxdy_sig',attrs={'units':'m^3/s'})
   ueflux=ueflux_sig.copy()
   veflux=veflux_sig.copy()
@@ -357,8 +379,8 @@ if not sigmacoord:
       coords={'time':time,'transport_regions':transport_regions,'moc_components':moc_components,'moc_z':mocz,'lat_aux_grid':lat_aux_grid}, \
       name='MOC')
 else:
-   MOCnew = xr.DataArray(np.zeros((nt,ntr,ncomp,mocnz,nyaux),dtype=np.single),dims=['time','transport_reg','moc_comp','sigma','lat_aux_grid'], \
-      coords={'time':time,'transport_regions':transport_regions,'moc_components':moc_components,'sigma':mocz,'lat_aux_grid':lat_aux_grid}, \
+   MOCnew = xr.DataArray(np.zeros((nt,ntr,ncomp,mocnz,nyaux),dtype=np.single),dims=['time','transport_reg','moc_comp','moc_s','lat_aux_grid'], \
+      coords={'time':time,'transport_regions':transport_regions,'moc_components':moc_components,'moc_s':sigma_moc,'lat_aux_grid':lat_aux_grid}, \
       name='MOC')
 MOCnew.values[:,:,0,:,:] = np.transpose(tmpmoc_e,axes=[3,2,1,0])
 #print('mocnewshape',np.shape(MOCnew))
@@ -399,9 +421,16 @@ MOCnew.values[:,1,0,0:mocnz-1,:] = MOCnew.values[:,1,0,0:mocnz-1,:] + amoc_s_e.v
 time11=timer.time()
 print('Timing:  Atl southern boundary stuff =  ',time11-time10,'s')
 
-
 #8.    Write output to netcdf
-out_ds=MOCnew.to_dataset(name='MOC')
+if sigmacoord:
+   outvarstr='MOCsig'
+else:
+   outvarstr='MOC'
+out_ds=MOCnew.to_dataset(name=outvarstr)
+if sigmacoord and verbose_output:
+#  out_ds['depth_sigma_top']=ztop_sigma
+#  out_ds['depth_sigma_bot']=zbot_sigma
+   out_ds['sigma_dz']=z_thk
 out_ds.to_netcdf(out_file,unlimited_dims='time')
 if append_to_infile:
    cmd = ['ncks','-A','-h','-v','MOC,transport_regions,moc_components',out_file,in_file]
@@ -413,3 +442,4 @@ print('Timing:  writing output =  ',time12-time11,'s')
 
 time13=timer.time()
 print('DONE creating ',out_file,'.  Total time = ',time13-time1,'s')
+                                                                                          
