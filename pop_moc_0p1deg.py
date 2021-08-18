@@ -430,7 +430,11 @@ out_ds=MOCnew.to_dataset(name=outvarstr)
 if sigmacoord and verbose_output:
 #  out_ds['depth_sigma_top']=ztop_sigma
 #  out_ds['depth_sigma_bot']=zbot_sigma
+   out_ds['uedydz']=ueflux
+   out_ds['vedxdz']=veflux
+   out_ds['wedxdy']=weflux
    out_ds['sigma_dz']=z_thk
+   out_ds['vedxdz']=out_ds['vedxdz'].drop(['TLAT','TLONG'])
 out_ds.to_netcdf(out_file,unlimited_dims='time')
 if append_to_infile:
    cmd = ['ncks','-A','-h','-v','MOC,transport_regions,moc_components',out_file,in_file]
