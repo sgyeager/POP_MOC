@@ -601,7 +601,7 @@ if not sigmacoord and debug:
 if sigmacoord and verbose_output:
    out_ds['uedydz']=ueflux
    out_ds['vedxdz']=veflux
-   print(out_ds['vedxdz'])
+#  print(out_ds['vedxdz'])
    out_ds['wedxdy']=weflux
    out_ds['uidydz']=uiflux
    out_ds['vidxdz']=viflux
@@ -613,7 +613,7 @@ if sigmacoord and verbose_output:
    out_ds['depth_sigma_bot']=zbot_sigma
    out_ds['sigma_dz']=z_thk
 #out_ds.to_netcdf(out_file,encoding={'MOC':{'_FillValue':mval}})
-   print(out_ds['vedxdz'])
+#  print(out_ds['vedxdz'])
    out_ds['vedxdz']=out_ds['vedxdz'].drop(['TLAT','TLONG'])            # this is a python bug that we are correcting
 out_ds.to_netcdf(out_file,unlimited_dims='time')
 

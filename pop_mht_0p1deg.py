@@ -15,8 +15,6 @@ append_to_infile=False  # True with "-a"
 compute_decomp=False    # True with "-v"
 
 # Define input/output streams
-popmocdir = '/glade/u/home/yeager/analysis/python/POP_MOC'
-os.chdir(popmocdir)
 moc_template_file = './moc_template.nc'
 nargs=len(sys.argv)
 in_file=sys.argv[-1]
@@ -247,7 +245,7 @@ MHT.encoding['_FillValue']=1.e30
 MST.encoding['_FillValue']=1.e30
 ds = MHT.to_dataset(name='N_HEAT')
 ds['N_SALT']=MST
-ds.to_netcdf(out_file)
+ds.to_netcdf(out_file,unlimited_dims='time')
 if append_to_infile:
    cmd = ['ncks','-A','-h','-v','N_HEAT,N_SALT,transport_regions,transport_components',out_file,in_file]
    subprocess.call(cmd)
