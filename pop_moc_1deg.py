@@ -45,7 +45,7 @@ if debug:
 
 # Import offline MOC routines written in fortran (compile with f2py if necessary)
 f90mocroutines='./MOCoffline.POP_1deg.f90'
-if not os.path.isfile('moc_offline_1deg.cpython-37m-x86_64-linux-gnu.so'):  
+if not os.path.isfile('moc_offline_1deg.cpython-38-x86_64-linux-gnu.so'):  
    print('MOCoffline compiling')
    os.system('f2py -c '+f90mocroutines+' -m moc_offline_1deg')
 else: print('moc_offline already compiled')
@@ -197,36 +197,36 @@ if not sigmacoord:
            coords={'time':time,'z_t':z_t,'ULAT':ulat,'ULONG':ulon}, \
            name='uedydz',attrs={'units':'m^3/s'})
      veflux=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
-           coords={'time':time,'z_t':z_t,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+           coords={'time':time,'z_t':z_t,'ULAT':ulat,'ULONG':ulon}, \
            name='vedxdz',attrs={'units':'m^3/s'})
      weflux=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','z_top','nlat','nlon'], \
-           coords={'time':time,'z_top':z_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+           coords={'time':time,'z_top':z_top,'TLAT':tlat,'TLONG':tlon}, \
            name='wedxdy',attrs={'units':'m^3/s'})
 
      tmpu=np.transpose(uiflux_z.values.copy(),axes=[3,2,1,0])
      tmpv=np.transpose(viflux_z.values.copy(),axes=[3,2,1,0])
      utmp,vtmp,wtmp = moc_offline_1deg.sgsfluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop_ut,targ_ztop_tu,targ_zbot_ut,targ_zbot_tu,tmpu,tmpv,mval,[nt,nz,ny,nx,targnz])
      uiflux=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
-           coords={'time':time,'z_t':z_t,'TLAT':(('nlat','nlon'),tlat),'ULONG':(('nlat','nlon'),ulon)}, \
+           coords={'time':time,'z_t':z_t,'TLAT':tlat,'ULONG':ulon}, \
            name='uidydz',attrs={'units':'m^3/s'})
      viflux=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
-           coords={'time':time,'z_t':z_t,'ULAT':(('nlat','nlon'),ulat),'TLONG':(('nlat','nlon'),tlon)}, \
+           coords={'time':time,'z_t':z_t,'ULAT':ulat,'TLONG':tlon}, \
            name='vidxdz',attrs={'units':'m^3/s'})
      wiflux=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','z_top','nlat','nlon'], \
-           coords={'time':time,'z_top':z_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+           coords={'time':time,'z_top':z_top,'TLAT':tlat,'TLONG':tlon}, \
            name='widxdy',attrs={'units':'m^3/s'})
 
      tmpu=np.transpose(usflux_z.values.copy(),axes=[3,2,1,0])
      tmpv=np.transpose(vsflux_z.values.copy(),axes=[3,2,1,0])
      utmp,vtmp,wtmp = moc_offline_1deg.sgsfluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop_ut,targ_ztop_tu,targ_zbot_ut,targ_zbot_tu,tmpu,tmpv,mval,[nt,nz,ny,nx,targnz])
      usflux=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
-           coords={'time':time,'z_t':z_t,'TLAT':(('nlat','nlon'),tlat),'ULONG':(('nlat','nlon'),ulon)}, \
+           coords={'time':time,'z_t':z_t,'TLAT':tlat,'ULONG':ulon}, \
            name='usdydz',attrs={'units':'m^3/s'})
      vsflux=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','z_t','nlat','nlon'], \
-           coords={'time':time,'z_t':z_t,'ULAT':(('nlat','nlon'),ulat),'TLONG':(('nlat','nlon'),tlon)}, \
+           coords={'time':time,'z_t':z_t,'ULAT':ulat,'TLONG':tlon}, \
            name='vsdxdz',attrs={'units':'m^3/s'})
      wsflux=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','z_top','nlat','nlon'], \
-           coords={'time':time,'z_top':z_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+           coords={'time':time,'z_top':z_top,'TLAT':tlat,'TLONG':tlon}, \
            name='wsdxdy',attrs={'units':'m^3/s'})
   else:
      ueflux=ueflux_z
@@ -364,15 +364,15 @@ else:
 
   # Calculate isopycnal layer thickness (U-grid)
   ztop_sigma=xr.DataArray(np.transpose(targ_ztop,axes=[3,2,1,0]),dims=['time','sigma_top','nlat','nlon'], \
-     coords={'time':time,'sigma_top':sigma_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+     coords={'time':time,'sigma_top':sigma_top,'TLAT':tlat,'TLONG':tlon}, \
      name='depth_sigma_top',attrs={'units':'m'})
   ztop_sigma.encoding['_FillValue']=mval
   zbot_sigma=xr.DataArray(np.transpose(targ_zbot,axes=[3,2,1,0]),dims=['time','sigma_bot','nlat','nlon'], \
-     coords={'time':time,'sigma_bot':sigma_bot,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+     coords={'time':time,'sigma_bot':sigma_bot,'TLAT':tlat,'TLONG':tlon}, \
      name='depth_sigma_bot',attrs={'units':'m'})
   zbot_sigma.encoding['_FillValue']=mval
   z_thk=xr.DataArray(np.zeros(np.shape(ztop_sigma)),dims=['time','sigma','nlat','nlon'], \
-      coords={'time':time,'sigma':sigma_mid,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+      coords={'time':time,'sigma':sigma_mid,'TLAT':tlat,'TLONG':tlon}, \
       name='sigma_dz',attrs={'units':'m'})
   z_thk.encoding['_FillValue']=mval
   z_thk.values=zbot_sigma.values-ztop_sigma.values
@@ -387,11 +387,11 @@ else:
         name='uedydz_sig',attrs={'units':'m^3/s'})
   ueflux_sig.encoding['_FillValue']=mval
   veflux_sig=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':ulat,'ULONG':ulon}, \
         name='vedxdz_sig',attrs={'units':'m^3/s'})
   veflux_sig.encoding['_FillValue']=mval
   weflux_sig=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma_top','nlat','nlon'], \
-        coords={'time':time,'sigma_top':sigma_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+        coords={'time':time,'sigma_top':sigma_top,'TLAT':tlat,'TLONG':tlon}, \
         name='wedxdy_sig',attrs={'units':'m^3/s'})
   weflux_sig.encoding['_FillValue']=mval
 
@@ -399,15 +399,15 @@ else:
   tmpv=np.transpose(viflux_z.values.copy(),axes=[3,2,1,0])
   utmp,vtmp,wtmp = moc_offline_1deg.sgsfluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop_ut,targ_ztop_tu,targ_zbot_ut,targ_zbot_tu,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
   uiflux_sig=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':ulat,'ULONG':ulon}, \
         name='uidydz_sig',attrs={'units':'m^3/s'})
   uiflux_sig.encoding['_FillValue']=mval
   viflux_sig=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':ulat,'ULONG':ulon}, \
         name='vidxdz_sig',attrs={'units':'m^3/s'})
   viflux_sig.encoding['_FillValue']=mval
   wiflux_sig=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma_top','nlat','nlon'], \
-        coords={'time':time,'sigma_top':sigma_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+        coords={'time':time,'sigma_top':sigma_top,'TLAT':tlat,'TLONG':tlon}, \
         name='widxdy_sig',attrs={'units':'m^3/s'})
   wiflux_sig.encoding['_FillValue']=mval
 
@@ -415,15 +415,15 @@ else:
   tmpv=np.transpose(vsflux_z.values.copy(),axes=[3,2,1,0])
   utmp,vtmp,wtmp = moc_offline_1deg.sgsfluxconv(tmpkmt,z_top,z_bot,dz.values,targ_ztop_ut,targ_ztop_tu,targ_zbot_ut,targ_zbot_tu,tmpu,tmpv,mval,[nt,nz,ny,nx,nsig])
   usflux_sig=xr.DataArray(np.transpose(utmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':ulat,'ULONG':ulon}, \
         name='usdydz_sig',attrs={'units':'m^3/s'})
   usflux_sig.encoding['_FillValue']=mval
   vsflux_sig=xr.DataArray(np.transpose(vtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-        coords={'time':time,'sigma':sigma_mid,'ULAT':(('nlat','nlon'),ulat),'ULONG':(('nlat','nlon'),ulon)}, \
+        coords={'time':time,'sigma':sigma_mid,'ULAT':ulat,'ULONG':ulon}, \
         name='vsdxdz_sig',attrs={'units':'m^3/s'})
   vsflux_sig.encoding['_FillValue']=mval
   wsflux_sig=xr.DataArray(np.transpose(wtmp.copy(),axes=[3,2,1,0]),dims=['time','sigma_top','nlat','nlon'], \
-        coords={'time':time,'sigma_top':sigma_top,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+        coords={'time':time,'sigma_top':sigma_top,'TLAT':tlat,'TLONG':tlon}, \
         name='wsdxdy_sig',attrs={'units':'m^3/s'})
   wsflux_sig.encoding['_FillValue']=mval
 
@@ -442,10 +442,10 @@ else:
   if debug:
      # DEBUG: write sigma2 interface layer depth info to netcdf
      tmparr1=xr.DataArray(np.transpose(targ_ztop,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-       coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+       coords={'time':time,'sigma':sig2,'TLAT':tlat,'TLONG':tlon}, \
        name='SIG_top')
      tmparr2=xr.DataArray(np.transpose(targ_zbot,axes=[3,2,1,0]),dims=['time','sigma','nlat','nlon'], \
-       coords={'time':time,'sigma':sig2,'TLAT':(('nlat','nlon'),tlat),'TLONG':(('nlat','nlon'),tlon)}, \
+       coords={'time':time,'sigma':sig2,'TLAT':tlat,'TLONG':tlon}, \
        name='SIG_bot')
      tmparr3=tmparr2-tmparr1
      tmparr4=tmparr1.min(dim='sigma')
