@@ -1,0 +1,53 @@
+name: POP_MOC
+channels:
+    - conda-forge
+    - nodefaults
+dependencies:
+    - bokeh=1.4
+    - bottleneck
+    - cartopy
+    - climpred
+    - cf-units
+    - cftime
+    - cmocean
+    - dask==2.14
+    - dask-jobqueue<=0.7.1
+    - distributed==2.14
+    - dask-labextension
+    - eofs
+    - esmpy
+    - holoviews
+    - intake
+    - intake-esm
+    - ipykernel
+    - ipywidgets
+    - jupyter-server-proxy
+    - jupyterlab
+    - matplotlib
+    - metpy
+    - nc-time-axis
+    - netcdf4
+    - nodejs
+    - numba
+    - numpy
+    - pandas
+    - pint
+    - pip
+    - pop-tools
+    - pre-commit
+    - pytest
+    - python==3.8
+    - scipy
+    - seaborn
+    - seawater
+    - statsmodels
+    - toolz
+    - tqdm
+    - watermark
+    - xarray>=0.17
+    - xesmf # xarray interface it ESMF tools
+    - xgcm # General Circulation Model Postprocessing with xarray
+    - xhistogram # Fast, flexible, label-aware histograms for numpy and xarray
+    - xrft # fourier transforms for xarray data
+    - zarr
+    - ncar-jobqueue
