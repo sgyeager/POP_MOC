@@ -3,16 +3,16 @@ channels:
     - conda-forge
     - nodefaults
 dependencies:
-    - bokeh=1.4
+    - bokeh
     - bottleneck
     - cartopy
     - climpred
     - cf-units
     - cftime
     - cmocean
-    - dask==2.14
-    - dask-jobqueue<=0.7.1
-    - distributed==2.14
+    - dask
+    - dask-jobqueue
+    - distributed
     - dask-labextension
     - eofs
     - esmpy
@@ -44,7 +44,7 @@ dependencies:
     - toolz
     - tqdm
     - watermark
-    - xarray>=0.17
+    - xarray==2022.03.0
     - xesmf # xarray interface it ESMF tools
     - xgcm # General Circulation Model Postprocessing with xarray
     - xhistogram # Fast, flexible, label-aware histograms for numpy and xarray
