@@ -99,39 +99,49 @@ def remove_inversions(sigma,zdim):
         sigma = xr.where(sigma.coords[zdim]==sigma.coords[zdim][k],sigma_k,sigma)
     return sigma
 
-def pop_isowflux(uflux_ne,vflux_ne,densdim,densedges):
+def fluxdiv_B(uflux,vflux):
+    # B-grid divergence
+    # Assumes uflux=U*DY*DZ, vflux=V*DX*DZ
+    UTE = 0.5*(uflux+uflux.shift(nlat=1))
+    UTW = UTE.roll(nlon=1,roll_coords=False)
+    VTN = 0.5*(vflux+vflux.roll(nlon=1,roll_coords=False))
+    VTS = VTN.shift(nlat=1)
+    fluxdiv = (UTE-UTW+VTN-VTS)
+    return fluxdiv
+
+def fluxdiv_C(uflux,vflux):
+    # C-grid divergence
+    # Assumes uflux=U*DY*DZ, vflux=V*DX*DZ
+    UTE = uflux
+    UTW = UTE.roll(nlon=1,roll_coords=False)
+    VTN = vflux
+    VTS = VTN.shift(nlat=1)
+    fluxdiv = (UTE-UTW+VTN-VTS)
+    return fluxdiv
+
+def wflux(uflux,vflux,densdim,densedges,grid='B'):
     """ 
-    Computes horizontal flux convergence for POP u,v volume fluxes in density-space.
+    Computes vertical volume flux given u,v volume fluxes in density-space.
     
     Parameters
     ----------
-    uflux_ne : array of Grid-zonal volume flux at U-point (m^3/s)
-    vflux_ne : array of Grid-meridional volume flux at U-point (m^3/s)
+    uflux : array of Grid-zonal volume flux (m^3/s)
+    vflux : array of Grid-meridional volume flux (m^3/s)
     densdim : string
         name of density dimension
     densedges : array of density coordinates corresponding to layer tops
+    grid : 'B'==> U,V both at northeast corner of tracer cell
+           'C'==> U at east face and V at north face of tracer cell
         
     Returns
     -------
     wflux : array of vertical volume flux in density coordinates (densedges) at T-point (m^3/s)
     """
     
-    # Fluxes on Tracer-grid corners:
-    uflux_nw = uflux_ne.roll(nlon=1,roll_coords=False)
-    vflux_nw = vflux_ne.roll(nlon=1,roll_coords=False)
-    uflux_sw = uflux_nw.shift(nlat=1)
-    vflux_sw = vflux_nw.shift(nlat=1)
-    uflux_se = uflux_ne.shift(nlat=1)
-    vflux_se = vflux_ne.shift(nlat=1)
-    
-    # Fluxes on Tracer-grid faces:
-    uflux_e = 0.5*(uflux_ne + uflux_se)
-    uflux_w = 0.5*(uflux_nw + uflux_sw)
-    vflux_n = 0.5*(vflux_ne + vflux_nw)
-    vflux_s = 0.5*(vflux_se + vflux_sw)
-    
-    # Convergence (= -Divergence) gives dW/dz:
-    dwflux = -(uflux_e-uflux_w+vflux_n-vflux_s)
+    if (grid=='B'):
+        dwflux = -fluxdiv_B(uflux,vflux)
+    else:
+        dwflux = -fluxdiv_C(uflux,vflux)
     
     # Bottom-up Vertical Integral to compute W:
     kwargs = {densdim:slice(None,None,-1)}
@@ -141,65 +151,57 @@ def pop_isowflux(uflux_ne,vflux_ne,densdim,densedges):
     
     return wflux
 
-def mesh_zonalavg(da_in, grid_area, grid_lat, rmask, rmaskdict, lat_edge, sum=False):
-    """
-    Uses xhistogram to calculate zonal averages of a field on a mesh grid (2D lat/lon), 
-    mapping onto a target latitude grid (lat_targ). Separate averages are computed for each integer 
-    value in rmask (described by rmaskdict). Set sum==True to compute zonal sum instead of average.
+def wflux_zonal_sum(wflux,regionmask,lat):
+    """ 
+    Compute zonally-integrated vertical volume flux using simple xhistogram binning by latitude.
     
-    Input
+    Parameters
     ----------
-    da_in : xarray.DataArray
-       DataArray to calculate a zonal average from. This should be your data variable.
-    grid_area : xarray.DataArray
-       Grid area field, matching horizontal dims of da_in
-    grid_lat : xarray.DataArray
-       Grid latitude field, matching horizontal dims of da_in
-    rmask: xarray.DataArray
-       DataArray containing region mask information (integers>0)
-    rmaskdict: dictionary
-       Dictionary that relates region mask values to region description strings
-    lat_edge : xarray.DataArray
-       Latitude axis to use for latitude binning (edge values)
-    sum : logical
-       False==>compute zonal average. True==>compute zonal sum.
-       
+    wflux : array of vertical volume flux (m^3/s)
+    regionmask : array of region masks (0 to exclude, 1 to include)
+    lat : array defining target latitudes for meridional binning
+        
     Returns
     -------
-    da_out : xarray.DataArray
-       Resultant zonally averaged field, with the same input name and a new latitude bin axis
+    wfluxzonalsum : array of zonally-integrated wflux for each region mask
     """
-    grid_dims = list(grid_area.dims)
-    area = xr.ones_like(da_in)*grid_area.where(~da_in.isnull())
-    lat = xr.ones_like(da_in)*grid_lat.where(~da_in.isnull())
-    lat.name = 'latitude'
-    zmlist = []
-    # Iterate over region mask regions:
-    for i in rmaskdict:
-        if i==0:
-            da_masked = da_in.where(rmask>0)
-            area_masked = area.where(rmask>0)
-            lat_masked = lat.where(rmask>0)
-        else:
-            da_masked = da_in.where(rmask==i)
-            area_masked = area.where(rmask==i)
-            lat_masked = lat.where(rmask==i)
+    wgts = wflux*regionmask
+    
+    # Use workaround for xhistogram bug (https://github.com/xgcm/xhistogram/pull/79). In future,
+    # use keep_coords=True.
+    xr_out = histogram(wflux.TLAT, bins=[lat],weights=wgts,dim=['nlat','nlon'],density=False)
+    xr_out = xr_out.assign_coords(wgts.drop(['TLAT','TLONG']).coords)
+    
+    # Add zeros at southern edge in preparation for meridional integral:
+    tmp = xr.zeros_like(xr_out.isel(TLAT_bin=0))
+    tmp['TLAT_bin'] = tmp['TLAT_bin'] - 1.
+    xr_out = xr.concat([tmp,xr_out],dim='TLAT_bin').rename({'TLAT_bin':lat.name})
+    xr_out[lat.name] = lat
+    return xr_out 
+
+def compute_MOC(wflux,regionmask,lat):
+    """ 
+    Use w-method to compute MOC.
+    
+    Parameters
+    ----------
+    wflux : array of vertical volume flux (m^3/s)
+    regionmask : array of region masks (0 to exclude, 1 to include)
+    lat : array defining target latitudes for meridional binning
         
-        if sum:
-            # histogram-binned field:
-            histdata = histogram(lat_masked, bins=[lat_edge.values], 
-                             weights=da_masked.fillna(0), dim=grid_dims)
-            zm = histdata.rename(da_in.name)
-        else:
-            # histogram-binned area weights:
-            histarea = histogram(lat_masked, bins=[lat_edge.values], 
-                             weights=area_masked, dim=grid_dims)
-            # histogram-binned field:
-            histdata = histogram(lat_masked, bins=[lat_edge.values], 
-                             weights=(area_masked*da_masked).fillna(0), dim=grid_dims)
-            zm = (histdata/histarea).rename(da_in.name)
-        zm = zm.assign_coords({'region':rmaskdict[i]})
-        zmlist.append(zm)
-    da_out = xr.concat(zmlist,dim='region').rename({'latitude_bin':'lat'})
-    da_out['lat'] = da_out['lat'].assign_attrs({'long_name':'latitude','units':'degrees_north'})
-    return da_out
+    Returns
+    -------
+    MOC : array of MOC (Sv) fields for each region mask
+    """
+    # first compute wflux zonal sum binned by latitude using histogram
+    zonsum = wflux_zonal_sum(wflux,regionmask,lat)
+    
+    # compute cumulative meridional sum (south to north)
+    moc = zonsum.cumsum(dim=lat.name)
+    
+    # convert to Sv
+    moc = moc/1.e6
+    moc = moc.assign_attrs({'long_name':'Meridional Overturning Circulation','units':'Sv'})
+    moc.name = 'MOC'
+    
+    return moc
