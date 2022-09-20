@@ -23,6 +23,27 @@ def pbc_dzt(dz,kmt,ht,z_w_bot,mval):
    dzt.encoding['_FillValue']=mval
    return dzt
 
+def tx0p1v3_dztdzu(dz,kmt):
+    dzt, dummy = xr.broadcast(dz, kmt)
+    kidx = xr.DataArray(np.arange(1,len(dz)+1),dims=['z_t'])
+    dzt = dzt.where(kidx<=kmt).fillna(0)
+    dzt = dzt.drop_vars(['z_t','ULONG', 'ULAT', 'TLONG', 'TLAT'])
+    dzbc = np.fromfile('/glade/p/cesmdata/cseg/inputdata/ocn/pop/tx0.1v3/grid/dzbc_pbc_s2.0_20171019.ieeer8',  dtype='>f8', count=-1)
+    dzbc = dzbc.reshape(kmt.shape) / 100.
+    pkmt = kmt.where(kmt == 0, kmt-1).astype('int').load()
+    dzt.loc[dict(z_t=pkmt)] = dzbc
+    dzt = dzt.assign_coords({'z_t':dz.z_t})
+    dzt.attrs['units'] = 'meter'
+    tmp=dzt.copy()
+    tmp[:,0, :] = tmp[:,-1, ::-1]                   # tripole grid periodicity at the top
+    tmpe=tmp.roll(nlon=-1,roll_coords=False)        # wraparound shift to west, without changing coords
+    tmpn=tmp.roll(nlat=-1,roll_coords=False)        # wraparound shift to south, without changing coords
+    tmpne=tmpn.roll(nlon=-1,roll_coords=False)      # wraparound shift to west, without changing coords
+    tmpall=xr.concat([tmp,tmpe,tmpn,tmpne],dim='dummy')
+    dzu=tmpall.min('dummy')
+    dzu.attrs['units'] = 'meter'
+    return dzt,dzu
+
 def wflux_zonal_int(wflux,regionmask,lat):
     """ 
     Compute zonally-integrated vertical volume flux for each subdomain 
@@ -169,7 +190,7 @@ def wflux_zonal_sum(wflux,regionmask,lat):
     
     # Use workaround for xhistogram bug (https://github.com/xgcm/xhistogram/pull/79). In future,
     # use keep_coords=True.
-    xr_out = histogram(wflux.TLAT, bins=[lat],weights=wgts,dim=['nlat','nlon'],density=False)
+    xr_out = histogram(wflux.TLAT, bins=[lat.data],weights=wgts,dim=['nlat','nlon'],density=False)
     xr_out = xr_out.assign_coords(wgts.drop(['TLAT','TLONG']).coords)
     
     # Add zeros at southern edge in preparation for meridional integral:
