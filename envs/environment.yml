@@ -1,6 +1,7 @@
 name: POP_MOC
 channels:
     - conda-forge
+    - ncar
     - nodefaults
 dependencies:
     - bokeh
@@ -10,12 +11,16 @@ dependencies:
     - cf-units
     - cftime
     - cmocean
-    - dask
+    - dask==2021.9
     - dask-jobqueue
-    - distributed
+    - distributed==2021.9
     - dask-labextension
+    - datashader
     - eofs
     - esmpy
+    - geocat-viz
+    - geocat-comp
+    - geoviews
     - holoviews
     - intake
     - intake-esm
@@ -44,10 +49,12 @@ dependencies:
     - toolz
     - tqdm
     - watermark
-    - xarray==2022.03.0
+    - xarray>=0.20.1
     - xesmf # xarray interface it ESMF tools
     - xgcm # General Circulation Model Postprocessing with xarray
     - xhistogram # Fast, flexible, label-aware histograms for numpy and xarray
     - xrft # fourier transforms for xarray data
+    - xoak
+    - xskillscore>=0.0.23
     - zarr
     - ncar-jobqueue
