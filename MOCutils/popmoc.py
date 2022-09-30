@@ -194,10 +194,13 @@ def wflux_zonal_sum(wflux,regionmask,lat):
     xr_out = xr_out.assign_coords(wgts.drop(['TLAT','TLONG']).coords)
     
     # Add zeros at southern edge in preparation for meridional integral:
-    tmp = xr.zeros_like(xr_out.isel(TLAT_bin=0))
-    tmp['TLAT_bin'] = tmp['TLAT_bin'] - 1.
-    xr_out = xr.concat([tmp,xr_out],dim='TLAT_bin').rename({'TLAT_bin':lat.name})
-    xr_out[lat.name] = lat
+    xr_out[{'TLAT_bin':0}] = 0
+    xr_out = xr_out.rename({'TLAT_bin':lat.name})
+    xr_out[lat.name] = lat[1:]
+    #tmp = xr.zeros_like(xr_out.isel(TLAT_bin=0))
+    #tmp['TLAT_bin'] = tmp['TLAT_bin'] - 1.
+    #xr_out = xr.concat([tmp,xr_out],dim='TLAT_bin').rename({'TLAT_bin':lat.name})
+    #xr_out[lat.name] = lat
     return xr_out 
 
 def compute_MOC(wflux,regionmask,lat):
@@ -226,3 +229,4 @@ def compute_MOC(wflux,regionmask,lat):
     moc.name = 'MOC'
     
     return moc
+
