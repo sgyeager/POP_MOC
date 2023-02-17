@@ -76,7 +76,7 @@ def sigma2_grid_86L():
     tmp1 = np.arange(28,35,0.2)
     tmp2 = np.arange(35,36,0.1)
     tmp3 = np.arange(36,38.05,0.05)
-    sig2 = np.concatenate((tmp1,tmp2,tmp3))
+    sig2 = np.concatenate((tmp1,tmp2,tmp3)).astype('float32')
     nsig = len(sig2)
     # Define density of midpoint, top, and bottom of isopycnal layers
     sigma_mid=xr.DataArray(sig2,coords={'sigma':sig2},
@@ -84,9 +84,9 @@ def sigma2_grid_86L():
     sigma_edge = (sigma_mid+sigma_mid.shift(sigma=1))/2.
     sigma_edge[0] = 0.
     sigma_edge = np.append(sigma_edge.values,[50.])
-    sigma_edge=xr.DataArray(sigma_edge,coords={'sigma':sigma_edge},
+    sigma_edge=xr.DataArray(sigma_edge,coords={'sigma':sigma_edge.astype('float32')},
                            attrs={'long_name':'Sigma2 at edges of layer','units':'kg/m^3'})
-    return sigma_mid,sigma_edge
+    return sigma_mid.astype('float32'),sigma_edge.astype('float32')
 
 def latitude_grid_1deg():
     """ 
@@ -186,7 +186,7 @@ def wflux_zonal_sum(wflux,regionmask,lat):
     -------
     wfluxzonalsum : array of zonally-integrated wflux for each region mask
     """
-    wgts = wflux*regionmask
+    wgts = (wflux*regionmask).astype('float32')
     
     # Use workaround for xhistogram bug (https://github.com/xgcm/xhistogram/pull/79). In future,
     # use keep_coords=True.
